@@ -14,7 +14,7 @@ if __name__ == "__main__":
     argparser.add_argument("--logconf", type=logging.config.fileConfig, default="loggers.ini",
                            help="specify logger parameters file")
 
-    argparser.parse_args(sys.argv)
+    argparser.parse_args(sys.argv[1:])
 
     # logging.config.fileConfig("loggers.ini")
     logger = logging.getLogger("pilot")
