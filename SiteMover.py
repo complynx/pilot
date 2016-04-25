@@ -26,7 +26,6 @@ class SiteMover(object):
     File movers move files between a storage element (of different kinds) and a local directory
     get_data: SE->local
     put_data: local->SE
-    check_space: available space in SE
     getMover: static function returning a SiteMover
 
     It furter provides functions useful for child classes (AAASiteMover):
@@ -52,7 +51,7 @@ class SiteMover(object):
     arch_type = ARCH_DEFAULT
     timeout = 5*3600
     useTracingService = True
-    filesInDQ2Dataset = {}
+    filesInRucioDataset = {}
 
     CONDPROJ = ['oflcond', 'comcond', 'cmccond', 'tbcond', 'tbmccond', 'testcond']
     PRODFTYPE = ['AOD', 'CBNT', 'ESD', 'EVNT', 'HIST', 'HITS', 'RDO', 'TAG', 'log', 'NTUP']
@@ -177,7 +176,7 @@ class SiteMover(object):
         timeout = pdict.get('timeout', 5*3600)
         experiment = pdict.get('experiment', "ATLAS")
 
-        # get the DQ2 tracing report
+        # get the Rucio tracing report
         report = self.getStubTracingReport(pdict['report'], 'sm', lfn, guid)
 
         # get the site information object
@@ -285,21 +284,21 @@ class SiteMover(object):
         self.prepareReport('DONE', report)
         return 0, pilotErrorDiag
 
-    def getDQ2SEType(dq2sitename):
+    def getRSEType(rse):
         """ Return the corresponding setype for the site """
 
         setype = None
         try:
             from dq2.info import TiersOfATLAS
-            setype = TiersOfATLAS.getSEType(dq2sitename)
+            setype = TiersOfATLAS.getSEType(rse)
         except:
             tolog("WARNING: getSEType failed")
 
         return setype
-    getDQ2SEType = staticmethod(getDQ2SEType)
+    getRSEType = staticmethod(getRSEType)
 
-    def getDQ2SiteName(surl=None):
-        """ Return the DQ2 site name using the SURL """
+    def getRSE(surl=None):
+        """ Return the Rucio site name (RSE ... Rucio Storage Element) using the SURL """
 
         sitename = None
         if surl:
@@ -315,12 +314,12 @@ class SiteMover(object):
                         sitename = site
                         break
         return sitename
-    getDQ2SiteName = staticmethod(getDQ2SiteName)
+    getRSE = staticmethod(getRSE)
 
-    def getDefaultDQ2SiteName(self):
-        """ Return the DQ2 site name using the schedconfig.se info """
+    def getDefaultRSE(self):
+        """ Return the Rucio site name using the schedconfig.se info """
 
-        # Build a preliminary SURL using minimum information necessary for the getDQ2SiteName() method
+        # Build a preliminary SURL using minimum information necessary for the getRSE() method
         default_token, se = SiteMover.extractSE(readpar('se'))
         tolog("default_token=%s, se=%s" % (default_token, se))
 
@@ -342,8 +341,8 @@ class SiteMover(object):
         surl = se + destination
         tolog("surl=%s"%surl)
 
-        # Get the default DQ2 site name
-        return SiteMover.getDQ2SiteName(surl=surl)
+        # Get the default Rucio site name
+        return SiteMover.getRSE(surl=surl)
 
     def getTiersOfATLASAlternativeName(self, endpoint):
         """ Return the alternativeName from TiersOfATLAS for a given edpoint """
@@ -357,7 +356,10 @@ class SiteMover(object):
         else:
             # Now get the alternativeName
             tolog("endpoint=%s"%endpoint)
-            alternativeName = TiersOfATLAS.getSiteProperty(endpoint, 'alternateName')[0]
+            try:
+                alternativeName = TiersOfATLAS.getSiteProperty(endpoint, 'alternateName')[0]
+            except:
+                tolog("!!WARNING!!5656!! TiersOfATLAS.getSiteProperty() failed to find alternativeName for %s" % (endpoint))
 
         return alternativeName
 
@@ -421,11 +423,11 @@ class SiteMover(object):
             # Found a groupdisk space token
             _token = token[len('dst:'):]
             tolog("token=%s"%_token)
-            tolog("sitename=%s"%self.getDefaultDQ2SiteName())
+            tolog("sitename=%s"%self.getDefaultRSE())
             # Get the corresponding alternative name and compare it to the alternative name of the site
             alternativeName_token = self.getTiersOfATLASAlternativeName(_token)
             tolog("alternativeName_token = %s" % (alternativeName_token))
-            alternativeName_site = self.getTiersOfATLASAlternativeName(self.getDefaultDQ2SiteName())
+            alternativeName_site = self.getTiersOfATLASAlternativeName(self.getDefaultRSE())
             tolog("alternativeName_site = %s" % (alternativeName_site))
 
             # Only proceed ith getting the groupdisk path if the alternativeName's are the same
@@ -480,7 +482,7 @@ class SiteMover(object):
         experiment = pdict.get('experiment', 'ATLAS')
         prodSourceLabel = pdict.get('prodSourceLabel', '')
 
-        # get the DQ2 tracing report
+        # get the Rucio tracing report
         report = self.getStubTracingReport(pdict['report'], 'sm', lfn, guid)
 
         # get the checksum type
@@ -617,9 +619,9 @@ class SiteMover(object):
         #58f836d5-ff4b-441a-979b-c37094257b72_0.job.log.tgz
         # tolog("Native_lfc_path: %s" % (native_lfc_path))
 
-        # replace the default path /grid/atlas/dq2 with lfcpath if different
-        # (to_native_lfn returns a path begining with /grid/atlas/dq2)
-        default_lfcpath = '/grid/atlas/dq2' # to_native_lfn always returns this at the beginning of the string
+        # replace the default path /grid/atlas/rucio with lfcpath if different
+        # (to_native_lfn returns a path begining with /grid/atlas/rucio)
+        default_lfcpath = '/grid/atlas/rucio' # to_native_lfn always returns this at the beginning of the string
         if default_lfcpath != lfcpath:
             final_lfc_path = native_lfc_path.replace(default_lfcpath, lfcpath)
         else:
@@ -657,6 +659,8 @@ class SiteMover(object):
             destination = self.getGroupDiskPath(endpoint=token)
 
             if destination != "":
+                if destination.endswith('//rucio'):
+                    destination = destination.replace('//rucio','/rucio')
                 tolog("GROUPDISK token requested (%s), destination=%s" % (token, destination))
                 return destination
             else:
@@ -726,9 +730,10 @@ class SiteMover(object):
             _field3 = subdirs[2]   # '0915151927'
             prefixdir = os.path.join(_user, _username, _field3)
             destination = os.path.join(destination, prefixdir)
-            lfcdir = os.path.join(lfcpath, prefixdir, dsname)
+            if lfcpath != "":
+                lfcdir = os.path.join(lfcpath, prefixdir, dsname)
+                tolog("LFC dir: %s" % (lfcdir))
             tolog("SE destination: %s" % (destination))
-            tolog("LFC dir: %s" % (lfcdir))
         else:
             error = PilotErrors()
             ec = error.ERR_STAGEOUTFAILED
@@ -797,80 +802,6 @@ class SiteMover(object):
                     dst_gpfn = dst_gpfn.replace('rucio/rucio', 'rucio')
 
         return 0, "", dst_gpfn, lfcdir
-
-    def check_space(self, ub):
-        """Checking space availability
-
-        This is a wrapper for functions specific to the different movers:
-        1. check DQ space URL
-        2. invoke _check_space, specific for each SiteMover
-         (e.g. SiteMover's _check_space get storage path and check local space availability)
-
-        """
-        # http://bandicoot.uits.indiana.edu:8000/dq2/space/free
-        # http://bandicoot.uits.indiana.edu:8000/dq2/space/total
-        # http://bandicoot.uits.indiana.edu:8000/dq2/space/default For when space availability is not verifiable
-        tolog("check_space called for: %s" % (ub))
-        if ub == "" or ub == "None" or ub == None:
-            tolog("Using alternative check space function since URL method can not be applied (URL not set)")
-            retn = self._check_space(ub)
-        else:
-            try:
-                tolog("Attempting urlopen with: %s" % (ub + '/space/free'))
-                f = urlopen(ub + '/space/free')
-                ret = f.read()
-                tolog("ret: %s" % str(ret))
-                retn = int(ret)
-                if retn == 0:
-                    retn = 999995
-                    tolog(ub + '/space/free returned 0 space available, returning %d' % (retn))
-            except:
-                tolog("Using alternative check space function since URL method failed")
-                retn = self._check_space(ub)
-        return retn
-
-    def _check_space(self, ub):
-        """ Checking space of a local directory """
-
-        fail = 0
-        ret = ''
-        if ub == "" or ub == "None" or ub == None:
-            dst_loc_se = readpar('sepath')
-            if dst_loc_se == "":
-                tolog("WARNING: Can not perform alternative space check since sepath is not set")
-                return -1
-            else:
-                tolog("Space check using df is no longer performed - will be replaced with SRM based space check")
-                return -1
-        else:
-            try:
-                f = urlopen(ub + '/storages/default')
-            except Exception, e:
-                tolog('!!WARNING!!2999!! Fetching default storage failed: %s' % str(e))
-                return -1
-            else:
-                ret = f.read()
-
-        if ret.find('//') == -1:
-            tolog('!!WARNING!!2999!! Fetching default storage failed!')
-            fail = -1
-        else:
-            dst_se = ret.strip()
-            if (dst_se.find('SFN') != -1):  # srm://dcsrm.usatlas.bnl.gov:8443/srm/managerv1?SFN=/pnfs/usatlas.bnl.gov/
-                s = dst_se.split('SFN=')
-                dst_loc_se = s[1]
-            else:
-                _sentries = dst_se.split('/', 3)
-                dst_loc_se = '/'+ _sentries[3]
-
-            avail = self.check_space_df(dst_loc_se)
-            if avail == -1:
-                fail = -1
-
-        if fail != 0:
-            return fail
-        else:
-            return avail
 
     def check_space_df(self, dst_loc_se):
         """ Run df to check space availability """
@@ -942,7 +873,7 @@ class SiteMover(object):
             tolog("Tracing report sent")
 
     def prepareReport(self, state, report):
-        """ Prepare the DQ2 tracing report. Set the client exit state and finish """
+        """ Prepare the Rucio tracing report. Set the client exit state and finish """
 
         if report.has_key('timeStart'):
 
@@ -959,7 +890,7 @@ class SiteMover(object):
             filename = getTracingReportFilename()
             status = writeJSON(filename, report)
             if status:
-                tolog("Wrote tracing report to file %s" % (filename))
+                tolog("Wrote tracing report to file %s (cwd=%s)" % (filename, os.getcwd()))
             else:
                 tolog("!!WARNING!!3333!! Failed to write tracing report to file")
 
@@ -972,7 +903,7 @@ class SiteMover(object):
             tolog("!!WARNING!!3331!! No timeStart found in tracing report, cannot send")
 
     def sendReport(self, report):
-        """ Send DQ2 tracing report. Set the client exit state and finish """
+        """ Send Rucio tracing report. Set the client exit state and finish """
 
         if report.has_key('timeStart'):
             # finish instrumentation
@@ -1086,7 +1017,7 @@ class SiteMover(object):
         return status
 
     def getFileInDataset(self, dataset, guid):
-        """ Get the file info and if necessary populate the DQ2 dataset dictionary """
+        """ Get the file info and if necessary populate the Rucio dataset dictionary """
 
         fileInDataset = None
 
@@ -1095,15 +1026,15 @@ class SiteMover(object):
             return None
 
         # is the dataset info already available?
-        if self.filesInDQ2Dataset.has_key(dataset):
-            tolog("(already downloaded DQ2 file info)")
+        if self.filesInDataset.has_key(dataset):
+            tolog("(already downloaded Rucio file info)")
             # get the file info
             try:
-                fileInDataset = self.filesInDQ2Dataset[dataset][guid]
+                fileInDataset = self.filesInDataset[dataset][guid]
             except Exception, e:
-                tolog("!!WARNING!!1111!! GUID = %s not found in DQ2 dataset (%s): %s" % (guid, dataset, e))
+                tolog("!!WARNING!!1111!! GUID = %s not found in Rucio dataset (%s): %s" % (guid, dataset, e))
         else:
-            tolog("(will download DQ2 file info)")
+            tolog("(will download Rucio file info)")
             try:
                 from dq2.clientapi.DQ2 import DQ2
                 dq2 = DQ2()
@@ -1111,18 +1042,18 @@ class SiteMover(object):
             except: # listFilesInDataset is not a subclass of Exception, so only use an except without Exception here
                 import sys
                 excType, excValue = sys.exc_info()[:2] # skip the traceback info to avoid possible circular reference
-                tolog("!!WARNING!!1112!! Failed to get dataset = %s from DQ2" % (dataset))
+                tolog("!!WARNING!!1112!! Failed to get dataset = %s from Rucio" % (dataset))
                 tolog("excType=%s" % (excType))
                 tolog("excValue=%s" % (excValue))
             else:
                 # add the new dataset to the dictionary
-                self.filesInDQ2Dataset[dataset] = dataset_info
+                self.filesInDataset[dataset] = dataset_info
 
                 # finally get the file info
                 try:
-                    fileInDataset = self.filesInDQ2Dataset[dataset][guid]
+                    fileInDataset = self.filesInDataset[dataset][guid]
                 except Exception, e:
-                    tolog("!!WARNING!!1113!! GUID = %s not found in DQ2 dataset (%s): %s" % (guid, dataset, e))
+                    tolog("!!WARNING!!1113!! GUID = %s not found in Rucio dataset (%s): %s" % (guid, dataset, e))
 
         return fileInDataset
 
@@ -1165,8 +1096,8 @@ class SiteMover(object):
 
         return filesize, checksum
 
-    def getFileInfoFromDQ2(self, dataset, guid):
-        """ Get the file size and checksum from DQ2 """
+    def getFileInfoFromRucio(self, dataset, guid):
+        """ Get the file size and checksum from Rucio """
 
         filesize = ""
         checksum = ""
@@ -1182,13 +1113,13 @@ class SiteMover(object):
                 checksum = tmp[1]
                 filesize = str(fileInDataset["filesize"])
             except Exception, e:
-                tolog("!!WARNING!!1114!! Failed to get file info from DQ2 (using default LFC values for file size and checksum): %s" % (e))
+                tolog("!!WARNING!!1114!! Failed to get file info from Rucio (using default LFC values for file size and checksum): %s" % (e))
                 filesize = ""
                 checksum = ""
             else:
-                tolog("DQ2 file info for LFN = %s: file size = %s, checksum = %s (type: %s)" % (lfn, filesize, checksum, checksum_type))
+                tolog("Rucio file info for LFN = %s: file size = %s, checksum = %s (type: %s)" % (lfn, filesize, checksum, checksum_type))
         else:
-            tolog("!!WARNING!!1115!! Failed to get file info from DQ2 (using default LFC values for file size and checksum)")
+            tolog("!!WARNING!!1115!! Failed to get file info from Rucio (using default LFC values for file size and checksum)")
 
         return filesize, checksum
 
@@ -1470,7 +1401,7 @@ class SiteMover(object):
     # http://atlas-sw.cern.ch/cgi-bin/viewcvs-atlas.cgi/offline/DataManagement/DQ2/dq2.filecatalog.lfc/lib/dq2/filecatalog/lfc/lfcconventions.py?view=log
 
     # Code taken from same source as strip functions above
-    def to_native_lfn(dsn, lfn, prefix='dq2/'):
+    def to_native_lfn(dsn, lfn, prefix='rucio/'):
         """
         Return LFN with LFC hierarchical namespace.
         """
@@ -1600,30 +1531,6 @@ class SiteMover(object):
         return csumtype
 
     getChecksumType = staticmethod(getChecksumType)
-
-    def getLFCChecksumType(lfn):
-        """ get the checksum type (should be MD or AD) """
-
-        try:
-            import lfc
-        except Exception, e:
-            pilotErrorDiag = "getLFCChecksumType() could not import lfc module: %s" % str(e)
-            tolog("!!WARNING!!2999!! %s" % (pilotErrorDiag))
-            return None
-
-        os.environ['LFC_HOST'] = readpar('lfchost')
-        stat = lfc.lfc_filestatg()
-        rc = lfc.lfc_statg(lfn, "", stat)
-        if rc != 0:
-            err_num = lfc.cvar.serrno
-            err_string = lfc.sstrerror(err_num)
-            tolog("!!WARNING!!2999!! (rc = %d) lfc_statg failed for lfn %s with: %d, %s" %\
-                  (rc, lfn, err_num, err_string))
-            return None
-        else:
-            return stat.csumtype
-
-    getLFCChecksumType = staticmethod(getLFCChecksumType)
 
     def isDummyChecksum(fchecksum):
         """ ignore dummy checksum values, e.g. used in the M4/5 cosmics tests """
@@ -2212,146 +2119,6 @@ class SiteMover(object):
         return True
     isProd = staticmethod(isProd)
 
-    def getLFCDir(analyJob, destination, dsname, lfn):
-        """ setup the lfc path """
-
-        lfcpath, pilotErrorDiag = SiteMover.getLFCPath(analyJob)
-        if lfcpath == "":
-            return lfcpath, pilotErrorDiag
-
-        tolog("Got lfcpath: %s" % (lfcpath))
-
-        # set up paths differently for analysis and production jobs
-        # use conventional LFC paths or production jobs
-        # use OSG style for analysis jobs (for the time being)
-        if not analyJob:
-            # return full lfc file path (beginning lfcpath might need to be replaced)
-            native_lfc_path = SiteMover.to_native_lfn(dsname, lfn)
-            # /grid/atlas/dq2/testpanda/testpanda.destDB.b7cd4b56-1b5e-465a-a5d7-38d5e2609724_sub01000457/
-            #58f836d5-ff4b-441a-979b-c37094257b72_0.job.log.tgz
-            tolog("Native_lfc_path: %s" % (native_lfc_path))
-
-            # replace the default path /grid/atlas/dq2 with lfcpath if different
-            # (to_native_lfn returns a path begining with /grid/atlas/dq2)
-            default_lfcpath = '/grid/atlas/dq2' # to_native_lfn always returns this at the beginning of the string
-            if default_lfcpath != lfcpath:
-                final_lfc_path = native_lfc_path.replace(default_lfcpath, lfcpath)
-            else:
-                final_lfc_path = native_lfc_path
-
-            stripped_lfcpath = os.path.dirname(native_lfc_path[len(default_lfcpath):]) # the rest (to be added to the 'destination' variable)
-            # /testpanda/testpanda.destDB.b7cd4b56-1b5e-465a-a5d7-38d5e2609724_sub01000457/58f836d5-ff4b-441a-979b-c37094257b72_0.job.log.tgz
-            # tolog("stripped_lfcpath: %s" % (stripped_lfcpath))
-
-            # full file path for disk
-            if stripped_lfcpath[0] == "/":
-                stripped_lfcpath = stripped_lfcpath[1:]
-            destination = os.path.join(destination, stripped_lfcpath)
-            # /pnfs/tier2.hep.manchester.ac.uk/data/atlas/dq2/testpanda/testpanda.destDB.fcaf8da5-ffb6-4a63-9963-f31e768b82ef_sub01000345
-            # tolog("Updated SE destination: %s" % (destination))
-
-            # name of dir to be created in LFC
-            lfcdir = os.path.dirname(final_lfc_path)
-            # /grid/atlas/dq2/testpanda/testpanda.destDB.dfb45803-1251-43bb-8e7a-6ad2b6f205be_sub01000492
-            # LFC LFN = /grid/atlas/dq2/testpanda/testpanda.destDB.dfb45803-1251-43bb-8e7a-6ad2b6f205be_sub01000492/
-            #364aeb74-8b62-4c8f-af43-47b447192ced_0.job.log.tgz
-            # lfclfn = '%s/%s' % ( lfcdir, lfn )
-
-        else: # for analysis jobs
-
-            ec, pilotErrorDiag, destination, lfcdir = SiteMover.getUserLFCDir(destination, lfcpath, dsname)
-            if ec != 0:
-                return lfcdir, pilotErrorDiag
-
-#            pat = re.compile('([^\.]+\.[^\.]+)\..*')
-#            mat = pat.match(dsname)
-#            if mat:
-#                prefixdir = mat.group(1)
-#                destination = os.path.join(destination, prefixdir)
-#            else:
-#                pilotErrorDiag = "getLFCDir encountered unexpected dataset name format: %s" % (dsname)
-#                tolog('!!WARNING!!2990!! %s' % (pilotErrorDiag))
-#                return lfcdir, pilotErrorDiag
-#            tolog("SE destination: %s" % (destination))
-#
-#            lfcdir = '%s/%s/%s' % ( lfcpath, prefixdir, dsname )
-
-
-        return lfcdir, pilotErrorDiag
-
-    getLFCDir = staticmethod(getLFCDir)
-
-    def lfc_mkdir(lfcdir, fake=False):
-        """ create the lfc dir """
-
-        error = PilotErrors()
-        pilotErrorDiag = ""
-        ec = 0
-
-        cmd = 'echo "LFC_HOST=$LFC_HOST"; lfc-mkdir -m 0775 -p %s' % (lfcdir)
-        tolog("Executing command: %s" % (cmd))
-        try:
-            if fake:
-                raise Exception("fake exception in lfc-mkdir")
-            _ec, telapsed, cout, cerr = timed_command(cmd, 600)
-            tolog("_ec: %s" % _ec)
-            tolog("telapsed: %s" % telapsed)
-            tolog("cout: %s" % cout)
-            tolog("cerr: %s" % cerr)
-        except Exception, e:
-            pilotErrorDiag = "lfc-mkdir threw an exception: %s" % str(e)
-            tolog('!!FAILED!!2999!! %s' % (pilotErrorDiag))
-            ec = error.ERR_STAGEOUTFAILED
-        else:
-            rs = cout + cerr
-            if _ec != 0:
-                if is_timeout(_ec):
-                    pilotErrorDiag = "lfc-mkdir get was timed out after %d seconds" % (telapsed)
-                    ec = error.ERR_PUTTIMEOUT
-                elif rs == 'File exists':
-                    tolog("Ignore existing lfc dir error")
-                    ec = 0
-                elif rs == "Could not establish context":
-                    pilotErrorDiag = "Could not establish context: Proxy / VO extension of proxy has probably expired"
-                    tolog("!!FAILED!!2999!! %s" % (pilotErrorDiag))
-                    ec = error.ERR_NOPROXY
-                else:
-                    pilotErrorDiag = "lfc-mkdir failed: %s" % (rs)
-                    tolog("!!FAILED!!2999!! %s" % (pilotErrorDiag))
-                    ec = error.ERR_STAGEOUTFAILED
-            else:
-                tolog("Command output: %s" % (rs))
-
-        return ec, pilotErrorDiag
-    lfc_mkdir = staticmethod(lfc_mkdir)
-
-    def lcg_rf(lfclfn, r_gpfn):
-        """ register file in lfc using CLI """
-
-        error = PilotErrors()
-        pilotErrorDiag = ""
-        ec = 0
-
-        cmd = 'echo "LFC_HOST=$LFC_HOST"; lcg-rf --vo atlas -l lfn:%s %s' % (lfclfn, r_gpfn)
-        tolog("Executing command: %s" % (cmd))
-        try:
-            _ec, rs = commands.getstatusoutput(cmd)
-        except Exception, e:
-            pilotErrorDiag = "lcg-rf threw an exception: %s" % str(e)
-            tolog('!!WARNING!!2999!! %s' % (pilotErrorDiag))
-            ec = error.ERR_FAILEDLCGREG
-        else:
-            if _ec != 0:
-                pilotErrorDiag = "lcg-rf failed: %s" % (rs)
-                tolog('!!WARNING!!2999!! %s' % (pilotErrorDiag))
-                ec = error.ERR_FAILEDLCGREG
-            else:
-                tolog("Command output: %s" % (rs))
-                tolog("LFC registration succeeded")
-
-        return ec, pilotErrorDiag
-    lcg_rf = staticmethod(lcg_rf)
-
     def getLFCPath(analyJob, alt=False):
         """ return the proper schedconfig lfcpath """
 
@@ -2369,7 +2136,7 @@ class SiteMover(object):
 
         if lfcpath == "":
             pilotErrorDiag = "lfc[prod]path is not set"
-            tolog('!!WARNING!!2990!! %s' % (pilotErrorDiag))
+            tolog('WARNING: %s' % (pilotErrorDiag))
 
         return lfcpath, pilotErrorDiag
     getLFCPath = staticmethod(getLFCPath)
@@ -2617,6 +2384,17 @@ class SiteMover(object):
                 tolog("Warning: lcg-get-checksum failed: %d, %s" % (ec, output))
             else:
                 tolog(output)
+
+                # are there any warnings we could ignore..?
+                if output.startswith('Error'):
+                    tolog("Will try to remove the Error line in case it is only a warning")
+                    try:
+                        output = output.split('\n')[-1]
+                    except Exception, e:
+                        tolog("Failed to remove the error line: %s" % (e))
+                    else:
+                        tolog("Updated output: %s" % (output))
+
                 try:
                     remote_checksum = output[:8]
                 except:
@@ -2864,10 +2642,21 @@ class SiteMover(object):
         else:
             # extract file size
             try:
+                # are there any warnings we could ignore..?
+                if output.startswith('Error'):
+                    tolog("Will try to remove the Error line in case it is only a warning (is the file size in the second line?)")
+                    try:
+                        output = output.split('\n')[1] # assuming file size in second line
+                    except Exception, e:
+                        tolog("Failed to remove the error line: %s" % (e))
+                    else:
+                        tolog("Updated output: %s" % (_output))
+
                 # remove extra spaces
                 while "  " in output:
                     output = output.replace("  ", " ")
                 _output = output.split(" ")
+
                 remote_fsize = _output[4]
             except Exception, e:
                 pilotErrorDiag = "_getRemoteFileSizeLCGLS caught an exception: %s" % str(e)
@@ -3164,7 +2953,7 @@ class SiteMover(object):
             if useCT:
                 directIn = False
                 tolog("Direct access mode is switched off (file will be transferred with the copy tool)")
-                updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="copy_to_scratch", type="input")
+                updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="copy_to_scratch", ftype="input")
             else:
                 # determine if the file is a root file according to its name
                 rootFile = self.isRootFileName(lfn)
@@ -3172,13 +2961,13 @@ class SiteMover(object):
                 if prodDBlockToken == 'local' or not rootFile:
                     directIn = False
                     tolog("Direct access mode has been switched off for this file (will be transferred with the copy tool)")
-                    updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="copy_to_scratch", type="input")
+                    updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="copy_to_scratch", ftype="input")
                 elif rootFile:
                     tolog("Found root file according to file name: %s (will not be transferred in direct reading mode)" % (lfn))
                     if useFileStager:
-                        updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="file_stager", type="input")
+                        updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="file_stager", ftype="input")
                     else:
-                        updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="remote_io", type="input")
+                        updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="remote_io", ftype="input")
                 else:
                     tolog("Normal file transfer")
         else:
@@ -3207,8 +2996,6 @@ class SiteMover(object):
 
     def getFullPath(self, scope, spacetoken, lfn, analyJob, prodSourceLabel, alt=False):
         """ Construct a full PFN using site prefix, space token, scope and LFN """
-
-        self._dump_ddmprotocols() # DEBUG
 
         # <protocol>://<hostname>:<port>/<protocol_prefix>/ + <site_prefix>/<space_token>/rucio/<scope>/md5(<scope>:<lfn>)[0:2]/md5(<scope:lfn>)[2:4]/<lfn>
 

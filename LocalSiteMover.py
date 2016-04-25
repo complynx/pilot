@@ -245,7 +245,6 @@ class LocalSiteMover(SiteMover.SiteMover):
         siteInformation = SiteInformation()
         directIn, transfer_mode = siteInformation.getDirectInAccessMode(prodDBlockToken, isRootFileName)
         if transfer_mode:
-            #updateFileState(lfn, workDir, jobId, mode="transfer_mode", state=transfer_mode, type="input")
             output["transfer_mode"] = transfer_mode
         if directIn:
             output["report"]["clientState"] = 'FOUND_ROOT'
@@ -509,7 +508,10 @@ class LocalSiteMover(SiteMover.SiteMover):
             if "dst:" in token:
                 token = token[len('dst:'):]
                 tolog("Dropped dst: part of space token descriptor; token=%s" % (token))
-                token = "ATLASGROUPDISK"
+                if 'DATADISK' in token:
+                    token = "ATLASDATADISK"
+                else:
+                    token = "ATLASGROUPDISK"
                 tolog("Space token descriptor reset to: %s" % (token))
 
             _params = self.__spacetoken % (token)
@@ -734,13 +736,13 @@ class LocalSiteMover(SiteMover.SiteMover):
         useCT = pdict.get('usect', True)
         prodDBlockToken = pdict.get('access', '')
 
-        # get the DQ2 tracing report
+        # get the Rucio tracing report
         report = self.getStubTracingReport(pdict['report'], 'local', lfn, guid)
 
 
         status, output = self.getStageInMode(lfn, prodDBlockToken)
         if output["transfer_mode"]:
-            updateFileState(lfn, workDir, jobId, mode="transfer_mode", state=output["transfer_mode"], type="input")
+            updateFileState(lfn, workDir, jobId, mode="transfer_mode", state=output["transfer_mode"], ftype="input")
         if status !=0:
             self.prepareReport(output["report"], report)
             return status, output["errorLog"]
@@ -751,7 +753,7 @@ class LocalSiteMover(SiteMover.SiteMover):
         status, output = self.stageIn(gpfn, fullname, fsize, fchecksum, experiment)
 
         if status == 0:
-            updateFileState(lfn, workDir, jobId, mode="file_state", state="transferred", type="input")
+            updateFileState(lfn, workDir, jobId, mode="file_state", state="transferred", ftype="input")
 
         self.prepareReport(output["report"], report)
         return status, output["errorLog"]
@@ -786,7 +788,7 @@ class LocalSiteMover(SiteMover.SiteMover):
             tolog("Treating PanDA Mover job as a production job during stage-out")
             analysisJob = False
 
-        # get the DQ2 tracing report
+        # get the Rucio tracing report
         report = self.getStubTracingReport(pdict['report'], 'local', lfn, guid)
 
 
@@ -800,14 +802,14 @@ class LocalSiteMover(SiteMover.SiteMover):
             self.prepareReport(reportState, report)
             return self.put_data_retfail(ec, pilotErrorDiag)
 
-        # get the DQ2 site name from ToA
+        # get the RSE from ToA
         try:
-            _dq2SiteName = self.getDQ2SiteName(surl=surl)
+            _RSE = self.getRSE(surl=surl)
         except Exception, e:
-            tolog("Warning: Failed to get the DQ2 site name: %s (can not add this info to tracing report)" % str(e))
+            tolog("Warning: Failed to get RSE: %s (can not add this info to tracing report)" % str(e))
         else:
-            report['localSite'], report['remoteSite'] = (_dq2SiteName, _dq2SiteName)
-            tolog("DQ2 site name: %s" % (_dq2SiteName))
+            report['localSite'], report['remoteSite'] = (_RSE, _RSE)
+            tolog("RSE: %s" % (_RSE))
 
         if testLevel == "1":
             source = "thisisjustatest"
@@ -880,7 +882,7 @@ class LocalSiteMover(SiteMover.SiteMover):
                     #self.prepareReport('GET_TIMEOUT', report)
                     outputRet["report"]["clientState"] = 'GET_TIMEOUT'
                     outputRet["errorLog"] = pilotErrorDiag
-                    return PilotErrors.ERR_GETTIMEOUT, pilotErrorDiag
+                    return PilotErrors.ERR_GETTIMEOUT, outputRet
                 else:
                     #self.prepareReport('CP_TIMEOUT', report)
                     outputRet["report"]["clientState"] = 'CP_TIMEOUT'

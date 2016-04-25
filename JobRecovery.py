@@ -36,8 +36,8 @@ class JobRecovery:
       "transferred"   : file has already been transferred (no further action)
       "missing"       : file was never created, the job failed (e.g. output file of a failed job; a log should never be missing)
     "reg_state" can assume the following values:
-      "not_registered": file was not registered in the LFC
-      "registered"    : file was already registered in the LFC (no further action)
+      "not_registered": file was not registered in the catalog (might not matter if the server does the registration)
+      "registered"    : file was already registered in the catalog (no further action)
     E.g. a file with state = "created", "not_registered" should first be transferred and then registered in the LFC (assuming that the pilot
     is responsible for LFC registrations)
     """
@@ -635,6 +635,9 @@ class JobRecovery:
         # NOTE: this function will eventually replace pilot::updateJobState() when new job rec is in place
 
         status = False
+
+        # IGNORE TEST MODE
+        mode = ""
 
         # create a job state object and give it the current job state information
         JS = JobState()

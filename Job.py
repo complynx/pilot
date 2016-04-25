@@ -1,7 +1,8 @@
 import os
-import commands
 import time
 import pUtil
+
+from subprocess import Popen, PIPE, STDOUT
 
 class Job:
     """ Job definition """
@@ -65,7 +66,7 @@ class Job:
         self.fileStateDictionary = None    # Dictionary for current file states (for definition, see JobRecovery class)
         self.outputFilesXML = "OutputFiles.xml" # XML metadata related to output files for NG / CERNVM
         self.transferType = None           # Brokerage may decide to have input files transferred with remote I/O (set to 'direct' in that case)
-        self.jobDefinitionID = None        # Job definition id forwarded to the DQ2 tracing server
+        self.jobDefinitionID = None        # Job definition id forwarded to the Rucio tracing server
         self.cloud = ""                    # The cloud the job belongs to
         self.credname = 'None'             #
         self.myproxy = 'None'              #
@@ -97,12 +98,15 @@ class Job:
 #        self.ddmEndPointOutAlt = []       #
         self.ddmEndPointLog = []           #
         self.cloneJob = ""                 # Is the job cloned? Allowed values: 'runonce', 'storeonce'
+        self.allowNoOutput = []            # Used to disregard empty files from jobReport
+        self.logBucketID = -1              # To keep track of which OS bucket the log was stored in
 
         # event service objects
         self.eventService = False          # True for event service jobs
         self.eventServiceMerge = False     # True for event service merge jobs
         self.eventRanges = None            # Event ranges dictionary
         self.jobsetID = None               # Event range job set ID
+        self.pandaProxySecretKey = None    # pandaproxy secret key
 #        self.eventRangeID = None           # Set for event service jobs
 #        self.startEvent = None             # Set for event service jobs
 #        self.lastEvent = None              # Set for event service jobs
@@ -123,6 +127,13 @@ class Job:
         self.timeStageOut = 0
         self.timeCleanUp = 0
 
+        self.inData = []  # validated structured data of input files ( aggregated inFiles, ddmEndPointIn, scopeIn, filesizeIn and others...)
+        self.outData = [] # structured data of output files (similar to inData)
+        self.logData = [] # structured data of log files (similar to inData)
+
+        self.accessmode = "" # accessmode=direct,copy: Should direct i/o be used for input files of this job
+
+
     def displayJob(self):
         """ dump job specifics """
 
@@ -133,10 +144,11 @@ class Job:
             _spsetup = "(not defined)"
         pUtil.tolog("\nPandaID=%s\nRelease=%s\nhomePackage=%s\ntrfName=%s\ninputFiles=%s\nrealDatasetsIn=%s\nfilesizeIn=%s\nchecksumIn=%s\nprodDBlocks=%s\nprodDBlockToken=%s\nprodDBlockTokenForOutput=%s\ndispatchDblock=%s\ndispatchDBlockToken=%s\ndispatchDBlockTokenForOut=%s\ndestinationDBlockToken=%s\noutputFiles=%s\ndestinationDblock=%s\nlogFile=%s\nlogFileDblock=%s\njobPars=%s\nThe job state=%s\nJob workdir=%s\nTarFileGuid=%s\noutFilesGuids=%s\ndestinationSE=%s\nfileDestinationSE=%s\nprodSourceLabel=%s\nspsetup=%s\ncredname=%s\nmyproxy=%s\ncloud=%s\ntaskID=%s\nprodUserID=%s\ndebug=%s\ntransferType=%s\nscopeIn=%s\nscopeOut=%s\nscopeLog=%s" %\
                     (self.jobId, self.release, self.homePackage, self.trf, self.inFiles, self.realDatasetsIn, self.filesizeIn, self.checksumIn, self.prodDBlocks, self.prodDBlockToken, self.prodDBlockTokenForOutput, self.dispatchDblock, self.dispatchDBlockToken, self.dispatchDBlockTokenForOut, self.destinationDBlockToken, self.outFiles, self.destinationDblock, self.logFile, self.logDblock, self.jobPars, self.result, self.workdir, self.tarFileGuid, self.outFilesGuids, self.destinationSE, self.fileDestinationSE, self.prodSourceLabel, _spsetup, self.credname, self.myproxy, self.cloud, self.taskID, self.prodUserID, self.debug, self.transferType, self.scopeIn, self.scopeOut, self.scopeLog))
-        pUtil.tolog("ddmEndPointIn=%s" % (self.ddmEndPointIn))
-        pUtil.tolog("ddmEndPointOut=%s" % (self.ddmEndPointOut))
-        pUtil.tolog("ddmEndPointLog=%s" % (self.ddmEndPointLog))
-        pUtil.tolog("cloneJob=%s" % (self.cloneJob))
+        pUtil.tolog("ddmEndPointIn=%s" % self.ddmEndPointIn)
+        pUtil.tolog("ddmEndPointOut=%s" % self.ddmEndPointOut)
+        pUtil.tolog("ddmEndPointLog=%s" % self.ddmEndPointLog)
+        pUtil.tolog("cloneJob=%s" % self.cloneJob)
+        pUtil.tolog("allowNoOutput=%s" % self.allowNoOutput)
 
     def mkJobWorkdir(self, sitewd):
         """ create the job workdir under pilot workdir """
@@ -190,7 +202,7 @@ class Job:
         self.jobId = data.get('PandaID', '0')
         self.taskID = data.get('taskID', '')
 
-        self.outputFilesXML = "OutputFiles-%s.xml" % (self.jobId)
+        self.outputFilesXML = "OutputFiles-%s.xml" % self.jobId
 
         self.homePackage = data.get('homepackage', '')
         self.trf = data.get('transformation', '')
@@ -200,59 +212,35 @@ class Job:
         except:
             self.jobDefinitionID = ''
 
-        try:
-            self.cloud = data.get('cloud', '')
-        except:
-            self.cloud = ''
+        self.cloud = data.get('cloud', '')
 
         # get the input files
-        inFiles = data.get('inFiles', '')
-        self.inFiles = inFiles.split(",")
+        self.inFiles = data.get('inFiles', '').split(',')
+        self.realDatasetsIn = data.get('realDatasetsIn', '').split(',')
+        self.filesizeIn = data.get('fsize', '').split(',')
+        self.checksumIn = data.get('checksum', '').split(',')
 
-        realDatasetsIn = data.get('realDatasetsIn', '')
-        self.realDatasetsIn = realDatasetsIn.split(",")
+        self.dispatchDblock = data.get('dispatchDblock', '').split(',')
+        self.prodDBlocks = data.get('prodDBlocks', '').split(',')
 
-        filesizeIn = data.get('fsize', '')
-        self.filesizeIn = filesizeIn.split(",")
+        self.prodDBlockToken = data.get('prodDBlockToken', '').split(',')
+        self.prodDBlockTokenForOutput = data.get('prodDBlockTokenForOutput', '').split(',')
 
-        checksumIn = data.get('checksum', '')
-        self.checksumIn = checksumIn.split(",")
+        self.dispatchDBlockToken = data.get('dispatchDBlockToken', '').split(',')
+        self.dispatchDBlockTokenForOut = data.get('dispatchDBlockTokenForOut', '').split(',')
 
-        dispatchDblock = data.get('dispatchDblock', '')
-        self.dispatchDblock = dispatchDblock.split(",")
-
-        prodDBlocks = data.get('prodDBlocks', '')
-        self.prodDBlocks = prodDBlocks.split(",")
-
-        prodDBlockToken = data.get('prodDBlockToken', '')
-        self.prodDBlockToken = prodDBlockToken.split(",")
-
-        prodDBlockTokenForOutput = data.get('prodDBlockTokenForOutput', '')
-        self.prodDBlockTokenForOutput = prodDBlockTokenForOutput.split(",")
-
-        dispatchDBlockToken = data.get('dispatchDBlockToken', '')
-        self.dispatchDBlockToken = dispatchDBlockToken.split(",")
-
-        dispatchDBlockTokenForOut = data.get('dispatchDBlockTokenForOut', '')
-        self.dispatchDBlockTokenForOut = dispatchDBlockTokenForOut.split(",")
-
-        destinationDBlockToken = data.get('destinationDBlockToken', '')
-        self.destinationDBlockToken = destinationDBlockToken.split(",")
+        self.destinationDBlockToken = data.get('destinationDBlockToken', '').split(',')
 
         self.ddmEndPointIn = data.get('ddmEndPointIn', '').split(',') if data.get('ddmEndPointIn') else []
         self.ddmEndPointOut = data.get('ddmEndPointOut', '').split(',') if data.get('ddmEndPointOut') else []
+        self.allowNoOutput = data.get('allowNoOutput', '').split(',') if data.get('allowNoOutput') else []
 
         self.cloneJob = data.get('cloneJob', '')
-
-        logFile = data.get('logFile', '')
-        self.logFile = logFile
-
+        self.logFile = data.get('logFile', '')
         self.prodUserID = data.get('prodUserID', '')
 
         self.credname = data.get('credname', 'None')
         self.myproxy = data.get('myproxy', 'None')
-
-        outFiles = data.get('outFiles', '')
 
         self.attemptNr = int(data.get('attemptNr', -1))
 
@@ -269,21 +257,22 @@ class Job:
             pass
 
         # Event Service variables
-        if data.has_key('eventService'):
-            if data.get('eventService', '').lower() == "true":
-                self.eventService = True
-            else:
-                self.eventService = False
-            pUtil.tolog("eventService = %s" % str(self.eventService))
+        self.eventService = data.get('eventService', '').lower() == "true"
+
+        if self.eventService:
+            pUtil.tolog("eventService = %s" % self.eventService)
         else:
             pUtil.tolog("Normal job (not an eventService job)")
-        if data.has_key('eventRanges'):
-            self.eventRanges = data.get('eventRanges', None)
-        if data.has_key('jobsetID'):
-            self.jobsetID = data.get('jobsetID', None)
-            pUtil.tolog("jobsetID=%s" % (self.jobsetID))
+
+        self.eventRanges = data.get('eventRanges')
+        self.jobsetID = data.get('jobsetID')
+
+        pUtil.tolog("jobsetID=%s" % self.jobsetID)
+
+        self.pandaProxySecretKey = data.get('pandaProxySecretKey')
+
         if not self.eventService and self.processingType == "evtest":
-            pUtil.tolog("Turning on Event Service for processing type = %s" % (self.processingType))
+            pUtil.tolog("Turning on Event Service for processing type = %s" % self.processingType)
             self.eventService = True
 
         # Event Service Merge variables
@@ -379,8 +368,6 @@ class Job:
 
         self.debug = data.get('debug', 'False')
         self.prodSourceLabel = data.get('prodSourceLabel', '')
-        destinationDblock = data.get('destinationDblock', '')
-
 
         # PN tmp
 #        skip = False
@@ -389,10 +376,13 @@ class Job:
 #                skip = True
 
         # figure out the real output files and log files and their destinationDblock right here
-        outfList = outFiles.split(",")
-        pUtil.tolog("outfList = %s" % (outfList))
-        outfdbList = destinationDblock.split(",")
-        pUtil.tolog("outfdbList = %s" % (outfdbList))
+
+        outfList = data.get('outFiles', '').split(',')
+        outfdbList = data.get('destinationDblock', '').split(',')
+
+        pUtil.tolog("outfList = %s" % outfList)
+        pUtil.tolog("outfdbList = %s" % outfdbList)
+
         outs = []
         outdb = []
         outddm = []
@@ -401,7 +391,7 @@ class Job:
         # keep track of log file index in the original file output list
         i_log = -1
         for i in range(len(outfList)):
-            if outfList[i] == logFile:
+            if outfList[i] == self.logFile:
                 logFileDblock = outfdbList[i]
                 logddm = [ self.ddmEndPointOut[i] ]
                 i_log = i
@@ -419,7 +409,7 @@ class Job:
             except Exception, e:
                 pUtil.tolog("!!WARNING!!2999!! Could not rearrange destinationDBlockToken list: %s" % str(e))
             else:
-                pUtil.tolog("destinationDBlockToken = %s" % (self.destinationDBlockToken))
+                pUtil.tolog("destinationDBlockToken = %s" % self.destinationDBlockToken)
         # put the chirp server info for the log file at the end of the list
         # note: any NULL value corresponding to a log file will automatically be handled
         if i_log != -1 and self.dispatchDBlockTokenForOut != None and self.dispatchDBlockTokenForOut != []:
@@ -430,20 +420,32 @@ class Job:
             except Exception, e:
                 pUtil.tolog("!!WARNING!!2999!! Could not rearrange dispatchDBlockTokenForOut list: %s" % str(e))
             else:
-                pUtil.tolog("dispatchDBlockTokenForOut = %s" % (self.dispatchDBlockTokenForOut))
+                pUtil.tolog("dispatchDBlockTokenForOut = %s" % self.dispatchDBlockTokenForOut)
 
-        pUtil.tolog("logFileDblock = %s" % (logFileDblock))
+        pUtil.tolog("logFileDblock = %s" % logFileDblock)
+
         self.outFiles = outs
         self.destinationDblock = outdb
         self.logDblock = logFileDblock
         self.ddmEndPointOut = outddm
         self.ddmEndPointLog = logddm
 
-        pUtil.tolog("Updated ddmEndPointOut=%s" % (self.ddmEndPointOut))
-        pUtil.tolog("Updated ddmEndPointLog=%s" % (self.ddmEndPointLog))
+        pUtil.tolog("Updated ddmEndPointOut=%s" % self.ddmEndPointOut)
+        pUtil.tolog("Updated ddmEndPointLog=%s" % self.ddmEndPointLog)
 
         self.jobPars = data.get('jobPars', '')
+
         # for accessmode testing: self.jobPars += " --accessmode=direct"
+
+        self.accessmode = ""
+        if self.transferType == 'direct': # enable direct access mode
+            self.accessmode = 'direct'
+
+        # job input options overwrite any Job settings
+        if '--accessmode=direct' in self.jobPars: # fix me later
+            self.accessmode = 'direct'
+        if '--accessmode=copy' in self.jobPars:   # fix me later
+            self.accessmode = 'copy'
 
         # for jem testing: self.jobPars += ' --enable-jem --jem-config \"a=1;\"'
         if "--pfnList" in self.jobPars:
@@ -460,7 +462,7 @@ class Job:
                     pfnList = _pfnList.split(",")
 
                     # add the pfnList files to the input file list
-                    self.inFiles += _localInFiles.split(",")
+                    self.inFiles += _localInFiles.split(",") # broken code? _localInFiles is not defined above
                     pUtil.tolog("Added local files from pfnList to input file list")
 
                     # remove the pfnList directive from the job parameters
@@ -477,6 +479,87 @@ class Job:
         self.destinationSE = data.get('destinationSE', '')
         self.fileDestinationSE = data.get('fileDestinationSE', '')
 
+        # prepare structured inData, outData, logData:
+        # old self.inFiles and etc list values may contain [''] - value in case of empty input,
+        # that's why new fileds are introduced to avoid breaking current logic
+        # later on inFiles and other "splitted" values should be replaced by combined aggregated structure (inData and etc)
+
+        # process infiles properties
+        self.inData = []
+
+        # format: [(data[source_key], FileInfo.attr_name),]
+        # if second argument=None or not specified then ignore processing of related source_key
+        in_keys = [('inFiles', 'lfn'),
+                   ('dispatchDblock', 'dispatchDblock'), ('dispatchDBlockToken', 'dispatchDBlockToken'),
+                   ('realDatasetsIn', 'dataset'), ('GUID', 'guid'),
+                   ('fsize', 'filesize'), ('checksum', 'checksum'), ('scopeIn', 'scope'),
+                   ('prodDBlocks', 'prodDBlock'), ('prodDBlockToken', 'prodDBlockToken'),
+                   ('ddmEndPointIn', 'ddmendpoint')]
+
+        kmap = dict([k[0], k[1]] for k in in_keys if not isinstance(k, str))
+        ksources = dict([k, data.get(k, '').split(',') if data.get(k) else []] for k in kmap)
+
+        for ind, lfn in enumerate(ksources.get('inFiles', [])):
+            if lfn in ['', 'NULL']:
+                continue
+            idat = {} # form data
+            for k, attrname in kmap.iteritems():
+                idat[attrname] = ksources[k][ind] if len(ksources[k]) > ind else None
+            finfo = FileSpec(type='input', **idat)
+            self.inData.append(finfo)
+
+        # process outfiles properties
+        self.outData = []
+        self.logData = []
+
+        # normally attributes names of outfile parametes should be mapped to inputfile corresponding ones, e.g. destinationDblock -> dispatchDblock -> Dblock, but the names kept as is just to simplify logic migration and avoid confusions
+        out_keys = [('outFiles', 'lfn'),
+                    ('destinationDblock', 'destinationDblock'),
+                    ('destinationDBlockToken', 'destinationDBlockToken'),
+                    ('realDatasets', 'dataset'),
+                    ('scopeOut', 'scope'),
+                    ('fileDestinationSE', 'fileDestinationSE'),
+                    ('dispatchDBlockTokenForOut', 'dispatchDBlockTokenForOut'),
+                    ('ddmEndPointOut', 'ddmendpoint'),
+                    ('prodDBlockTokenForOutput', 'prodDBlockTokenForOutput') # exposed only for eventservice related job
+                   ]
+
+        kmap = dict([k[0], k[1]] for k in out_keys if not isinstance(k, str))
+        ksources = dict([k, data.get(k, '').split(',') if data.get(k) else []] for k in kmap)
+
+        #log_entry = ['logFile', 'logGUID', 'scopeLog'] # log specific values
+
+        # fix scopeOut of log file: to be fixed properly on Panda side: just hard patched here
+        logFile = data.get('logFile')
+        if ksources['scopeOut'] and logFile:
+            scopeOut = []
+            for lfn in ksources.get('outFiles', []):
+                if lfn == logFile:
+                    scopeOut.append(data.get('scopeLog'))
+                else:
+                    if not ksources['scopeOut']:
+                        raise Exception('Failed to extract scopeOut parameter from Job structure sent by Panda, please check input format!')
+                    scopeOut.append(ksources['scopeOut'].pop(0))
+            ksources['scopeOut'] = scopeOut
+
+        for ind, lfn in enumerate(ksources['outFiles']):
+            if lfn in ['', 'NULL']:
+                continue
+            idat = {} # form data
+            for k, attrname in kmap.iteritems():
+                idat[attrname] = ksources[k][ind] if len(ksources[k]) > ind else None
+
+            idat['type'] = 'output'
+            ref_dat = self.outData
+            if lfn == logFile: # log file case
+                idat['type'] = 'log'
+                idat['guid'] = data.get('logGUID')
+                ref_dat = self.logData
+
+            finfo = FileSpec(**idat)
+            ref_dat.append(finfo)
+
+
     def isAnalysisJob(self):
         """
             Determine whether the job is an analysis job or not
@@ -487,12 +570,249 @@ class Job:
         #return pUtil.isAnalysisJob(self.trf)
         #copied from pUtil.isAnalysisJob to isolate the logic amd move outside pUtil
 
-        #trf = self.trf.split(',')[0] # ???  used like this in few places: it will affect result only if the trf starts with ','
-        is_analysis = self.trf.startswith('https://') or self.trf.startswith('http://')
+        is_analysis = False
 
-        if self.prodSourceLabel == "software": # logic extracted from the sources
+        trf = self.trf.split(',') if self.trf else [] # properly convert to list (normally should be done in setJobDef())
+        if trf and trf[0] and (trf[0].startswith('https://') or trf[0].startswith('http://')): # check 1st entry
+            is_analysis = True
+
+        if self.prodSourceLabel == "software": # logic extracted from the sources, to be verified
             is_analysis = False
 
         # apply addons checks later if need
 
         return is_analysis
+
+    def isBuildJob(self):
+        """
+        Check if the job is a build job
+        (i.e. check if the job only has one output file that is a lib file)
+        """
+
+        ofiles = self.outData
+        is_build_job = len(ofiles) == 1 and '.lib.' in ofiles[0].lfn
+        return is_build_job
+
+
+    #def getDatasets(self):
+    #    """ get the datasets for the output files """
+    #
+    #    # get the default dataset
+    #    if self.destinationDblock and self.destinationDblock[0] not in ['NULL', ' ']:
+    #        dsname = self.destinationDblock[0]
+    #    else:
+    #        dsname = "%s-%s-%s" % (time.localtime()[0:3]) # pass it a random name
+    #
+    #    # create the dataset dictionary
+    #    # (if None, the dsname above will be used for all output files)
+    #    datasetDict = getDatasetDict(self.outFiles, self.destinationDblock, self.logFile, self.logDblock)
+    #    if datasetDict:
+    #        pUtil.tolog("Dataset dictionary has been verified")
+    #    else:
+    #        pUtil.tolog("Dataset dictionary could not be verified, output files will go to: %s" % dsname)
+    #
+    #    return dsname, datasetDict
+    #
+    #
+    #def ___getDatasetDict(self): # don't use this function: do use structured self.outData & self.outLog instead
+    #    """
+    #        Create a dataset dictionary: old cleaned function to verify the logic
+    #
+    #        :logic:
+    #            - validate self.outputFiles, self.destinationDblock: to have same length and contains valid data
+    #            - join self.outputFiles, self.destinationDblock into the dict
+    #            - add (self.logFile, self.logFileDblock) in the dict
+    #    """
+    #
+    #    datasetDict = None
+    #
+    #    # verify that the lists are of equal size
+    #    if len(self.outputFiles) != len(self.destinationDblock):
+    #        pUtil.tolog("WARNING: Lists are not of same length: %s, %s" % (self.outputFiles, self.destinationDblock))
+    #    elif not len(outputFiles):
+    #        pUtil.tolog("No output files for this job (outputFiles has zero length)")
+    #    elif not len(destinationDblock):
+    #        pUtil.tolog("WARNING: destinationDblock has zero length")
+    #    else:
+    #        # verify that list contains valid entries
+    #        for _list in [self.outputFiles, self.destinationDblock]:
+    #            for _entry in _list:
+    #                if _entry in ["NULL", "", " ", None]:
+    #                    pUtil.tolog("!!WARNING!!2999!! Found non-valid entry in list: %s" % _list)
+    #                    return None
+    #
+    #        # build the dictionary
+    #        try:
+    #            datasetDict = dict(zip(self.outputFiles, self.destinationDblock))
+    #        except Exception, e:
+    #            pUtil.tolog("!!WARNING!!2999!! Exception caught in getDatasetDict(): %s" % e)
+    #            return None
+    #
+    #        # add the log file info
+    #        datasetDict[self.logFile] = self.logFileDblock
+    #
+    #    return datasetDict
+    #
+    #
+    #def __getDatasetName(datasetDict, lfn, pdsname): # don't use this function
+    #    """
+    #        Get the dataset name: old function to validate and refactor the logic
+    #        :return: dsname, dsname_for_traces
+    #
+    #        :logic:
+    #                - dsname_for_traces = datasetDict.get(lfn, pdsname)
+    #                - dsname = dsname_for_traces.replace('_sub[0-9]+', '')
+    #    """
+    #
+    #    if datasetDict and lfn not in datasetDict:
+    #        pUtil.tolog("!!WARNING!!2999!! Could not get dsname from datasetDict for lfn=%s: dict=%s .. will use default dsname=%s" % (lfn, datasetDict, pdsname))
+    #
+    #    # get the dataset name from the dictionary
+    #    datasetDict = datasetDict or {}
+    #    dsname = datasetDict.get(lfn, pdsname)
+    #
+    #    # save the original dsname for the tracing report
+    #    dsname_report = dsname
+    #
+    #    # remove any _subNNN parts from the dataset name (from now on dsname will only be used to create SE destination paths)
+    #    m = re.match('\S+(\_sub[0-9]+)', dsname)
+    #    if m:
+    #        dsname = dsname.replace(m.group(1), '')
+    #        tolog("Removed _subNNN part=%s from the dataset, updated dsname=%s" % (match.group(1), dsname))
+    #    else:
+    #        tolog("Found no _subNNN string in the dataset name")
+    #
+    #    tolog("File %s will go to dataset %s" % (lfn, dsname))
+    #
+    #    return dsname, dsname_report
+
+
+    def __repr__(self):
+        """ smart info for debuggin/printing Job content """
+
+        ret = []
+        ret.append("Job.jobId=%s" % self.jobId)
+        for k in ['inData', 'outData', 'logData']:
+            ret.append("Job.%s = %s" % (k, getattr(self, k, None)))
+
+        return '\n'.join(ret)
+
+
+    def _print_files(self, key): # quick stub to be checked later
+
+        files = [os.path.join(self.workdir or '', e.lfn) for e in getattr(self, key, [])]
+        pUtil.tolog("%s file(s): %s" % (key, files))
+        cmd = 'ls -la %s' % ' '.join(files)
+        msg = "do EXEC cmd=%s" % cmd
+        c = Popen(cmd, stdout=PIPE, stderr=STDOUT, shell=True)
+        output = c.communicate()[0]
+        pUtil.tolog(msg + '\n' + output)
+
+    def print_infiles(self):
+        return self._print_files('inData')
+
+    def print_outfiles(self):
+        return self._print_files('outData')
+
+    def print_logfiles(self):
+        return self._print_files('logData')
+
+
+    def _sync_outdata(self):
+        """
+            old logic integration function
+              - extend job.outData with new entries from job.outFiles if any
+              - do populate guids values
+              - init dataset value (destinationDblock) if not set
+        """
+
+        # group outData by lfn
+        data = dict([e.lfn, e] for e in self.outData)
+
+        # build structure (join data) from splitted attributes
+        extra = []
+        for i, lfn in enumerate(self.outFiles):
+            if lfn not in data: # found new entry
+                kw = {'type':'output'}
+                #kw['destinationDBlockToken'] = self.destinationDBlockToken[i] # not used by new Movers
+                kw['destinationDblock'] = self.destinationDblock[i]
+                kw['scope'] = self.scopeOut[i]
+                kw['ddmendpoint'] = self.ddmEndPointOut[i] if i<len(self.ddmEndPointOut) else self.ddmEndPointOut[0]
+                kw['guid'] = self.outFilesGuids[i] # outFilesGuids must be coherent with outFiles, otherwise logic corrupted
+                spec = FileSpec(lfn=lfn, **kw)
+                extra.append(spec)
+            else: # sync data
+                spec = data[lfn]
+                spec.guid = self.outFilesGuids[i]
+        if extra:
+            pUtil.tolog('Job._sync_outdata(): found extra output files to be added for stage-out: extra=%s' % extra)
+            self.outData.append(extra)
+
+        # init dataset value (destinationDblock) if not set
+        rand_dsn = "%s-%s-%s" % (time.localtime()[0:3]) # pass it a random name
+        for spec in self.outData:
+            if not spec.destinationDblock or spec.destinationDblock == 'NULL':
+                spec.destinationDblock = self.outData[0].destinationDblock or rand_dsn
+
+
+class FileSpec(object):
+
+    _infile_keys =  ['lfn', 'ddmendpoint', 'type',
+                    'dataset', 'scope',
+                    'dispatchDblock', 'dispatchDBlockToken',
+                    'guid', 'filesize', 'checksum',
+                    'prodDBlock', 'prodDBlockToken',
+                    ]
+
+
+    _outfile_keys = ['lfn', 'ddmendpoint', 'type',
+                    'dataset', 'scope',
+                    'destinationDblock', 'destinationDBlockToken',
+                    'fileDestinationSE',
+                    'dispatchDBlockTokenForOut',
+                    'prodDBlockTokenForOutput', # exposed only for eventservice related job
+                    ]
+
+    _local_keys = ['type', 'status', 'replicas', 'surl', 'turl', 'mtime']
+
+    def __init__(self, **kwargs):
+
+        attributes = self._infile_keys + self._outfile_keys + self._local_keys
+        for k in attributes:
+            setattr(self, k, kwargs.get(k, getattr(self, k, None)))
+
+        self.filesize = int(getattr(self, 'filesize', 0) or 0)
+        self.replicas = []
+
+    def __repr__(self):
+        obj = dict((name, getattr(self, name)) for name in sorted(dir(self)) if not name.startswith('_') and not callable(getattr(self, name)))
+        return "%s" % obj
+
+    def get_checksum(self):
+        """
+        :return: checksum, checksum_type
+        """
+
+        cc = (self.checksum or '').split(':')
+        if len(cc) != 2:
+            return self.checksum, None
+        checksum_type, checksum = cc
+        cmap = {'ad':'adler32', 'md':'md5'}
+        checksum_type = cmap.get(checksum_type, checksum_type)
+
+        return checksum, checksum_type
+
+    def is_directaccess(self):
+
+        is_rootfile = '.root' in self.lfn
+
+        exclude_pattern = ['.tar.gz', '.lib.tgz', '.raw.']
+        for e in exclude_pattern:
+            if e in self.lfn:
+                is_rootfile = False
+                break
+
+        if not is_rootfile:
+            return False
+
+        return self.prodDBlockToken != 'local' and is_rootfile

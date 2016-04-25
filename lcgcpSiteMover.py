@@ -143,7 +143,7 @@ class lcgcpSiteMover(SiteMover.SiteMover):
         useCT = pdict.get('usect', True)
         prodDBlockToken = pdict.get('access', '')
 
-        # get the DQ2 tracing report
+        # get the Rucio tracing report
         report = self.getStubTracingReport(pdict['report'], 'lcg', lfn, guid)
 
         # get a proper envsetup
@@ -177,7 +177,7 @@ class lcgcpSiteMover(SiteMover.SiteMover):
             if useCT:
                 directIn = False
                 tolog("Direct access mode is switched off (file will be transferred with the copy tool)")
-                updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="copy_to_scratch", type="input")
+                updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="copy_to_scratch", ftype="input")
             else:
                 # determine if the file is a root file according to its name
                 rootFile = self.isRootFileName(lfn)
@@ -185,16 +185,16 @@ class lcgcpSiteMover(SiteMover.SiteMover):
                 if prodDBlockToken == 'local' or not rootFile:
                     directIn = False
                     tolog("Direct access mode has been switched off for this file (will be transferred with the copy tool)")
-                    updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="copy_to_scratch", type="input")
+                    updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="copy_to_scratch", ftype="input")
                 elif rootFile:
                     tolog("Found root file according to file name: %s (will not be transferred in direct reading mode)" % (lfn))
                     report['relativeStart'] = None
                     report['transferStart'] = None
                     self.prepareReport('FOUND_ROOT', report)
                     if useFileStager:
-                        updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="file_stager", type="input")
+                        updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="file_stager", ftype="input")
                     else:
-                        updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="remote_io", type="input")
+                        updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="remote_io", ftype="input")
                     return error.ERR_DIRECTIOFILE, pilotErrorDiag
                 else:
                     tolog("Normal file transfer")
@@ -315,7 +315,7 @@ class lcgcpSiteMover(SiteMover.SiteMover):
                     self.prepareReport('MD5_MISMATCH', report)
                     return error.ERR_GETMD5MISMATCH, pilotErrorDiag
 
-        updateFileState(lfn, workDir, jobId, mode="file_state", state="transferred", type="input")
+        updateFileState(lfn, workDir, jobId, mode="file_state", state="transferred", ftype="input")
         self.prepareReport('DONE', report)
         return 0, pilotErrorDiag
 
@@ -346,7 +346,7 @@ class lcgcpSiteMover(SiteMover.SiteMover):
 
         filename = pfn.split('/')[-1]
 
-        # get the DQ2 tracing report
+        # get the Rucio tracing report
         report = self.getStubTracingReport(pdict['report'], 'lcg', lfn, guid)
 
         # is the dataset defined?
@@ -409,15 +409,15 @@ class lcgcpSiteMover(SiteMover.SiteMover):
         tolog("putfile = %s" % (putfile))
         tolog("full_surl = %s" % (full_surl))
 
-        # get the DQ2 site name from ToA
+        # get the RSE from ToA
         try:
-            _dq2SiteName = self.getDQ2SiteName(surl=putfile)
+            _RSE = self.getRSE(surl=putfile)
         except:
             # WARNING: do not print the exception here since it can sometimes not be converted to a string! (problem seen at Taiwan)
-            tolog("Warning: Failed to get the DQ2 site name (can not add this info to tracing report)")
+            tolog("Warning: Failed to get RSE (can not add this info to tracing report)")
         else:
-            report['localSite'], report['remoteSite'] = (_dq2SiteName, _dq2SiteName)
-            tolog("DQ2 site name: %s" % (_dq2SiteName))
+            report['localSite'], report['remoteSite'] = (_RSE, _RSE)
+            tolog("RSE: %s" % (_RSE))
 
         # get the absolute (full) path to the file
         fppfn = os.path.abspath(pfn)
@@ -467,7 +467,10 @@ class lcgcpSiteMover(SiteMover.SiteMover):
             if "dst:" in token:
                 token = token[len('dst:'):]
                 tolog("Dropped dst: part of space token descriptor; token=%s" % (token))
-                token = "ATLASGROUPDISK"
+                if 'DATADISK' in token:
+                    token = "ATLASDATADISK"
+                else:
+                    token = "ATLASGROUPDISK"
                 tolog("Space token descriptor reset to: %s" % (token))
 
             surl = putfile[putfile.index('srm://'):]

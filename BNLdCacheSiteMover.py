@@ -51,7 +51,7 @@ class BNLdCacheSiteMover(dCacheSiteMover.dCacheSiteMover):
         timeout = pdict.get('timeout', 5*3600)
         prodDBlockToken = pdict.get('access', '')
 
-        # get the DQ2 tracing report
+        # get the Rucio tracing report
         report = self.getStubTracingReport(pdict['report'], 'BNLdCache', lfn, guid)
 
         # get a proper envsetup
@@ -109,7 +109,7 @@ class BNLdCacheSiteMover(dCacheSiteMover.dCacheSiteMover):
             if useCT:
                 directIn = False
                 tolog("Direct access mode is switched off (file will be transferred with the copy tool)")
-                updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="copy_to_scratch", type="input")
+                updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="copy_to_scratch", ftype="input")
             else:
                 # determine if the file is a root file according to its name
                 rootFile = self.isRootFileName(lfn)
@@ -117,16 +117,16 @@ class BNLdCacheSiteMover(dCacheSiteMover.dCacheSiteMover):
                 if prodDBlockToken == 'local' or not rootFile:
                     directIn = False
                     tolog("Direct access mode has been switched off for this file (will be transferred with the copy tool)")
-                    updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="copy_to_scratch", type="input")
+                    updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="copy_to_scratch", ftype="input")
                 elif rootFile:
                     tolog("Found root file according to file name: %s (will not be transferred in direct reading mode)" % (lfn))
                     report['relativeStart'] = None
                     report['transferStart'] = None
                     self.prepareReport('FOUND_ROOT', report)
                     if useFileStager:
-                        updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="file_stager", type="input")
+                        updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="file_stager", ftype="input")
                     else:
-                        updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="remote_io", type="input")
+                        updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="remote_io", ftype="input")
                     return error.ERR_DIRECTIOFILE, pilotErrorDiag
                 else:
                     tolog("Normal file transfer")
@@ -136,7 +136,7 @@ class BNLdCacheSiteMover(dCacheSiteMover.dCacheSiteMover):
             _cmd_str = '%sdccp %s %s' % (_setup_str, loc_pfn, dest_path)
         else:
             _cmd_str = '%sdccp pnfs://dcdcap.usatlas.bnl.gov:22125/%s %s' % (_setup_str, pnfsid, dest_path)
-            
+
         tolog("Executing command: %s" % (_cmd_str))
         report['transferStart'] = time.time()
         try:
@@ -193,7 +193,7 @@ class BNLdCacheSiteMover(dCacheSiteMover.dCacheSiteMover):
             tolog("Output: %s" % (o))
 
             # dccp can fail without setting a non-zero exit code;
-            # e.g. with output = 
+            # e.g. with output =
             # "Failed to create a control line
             # Failed open file in the dCache.
             # Can't open source file : Unable to connect to server
@@ -266,7 +266,7 @@ class BNLdCacheSiteMover(dCacheSiteMover.dCacheSiteMover):
         # compare remote and local file checksum
         if fchecksum and fchecksum != "0" and dstfchecksum != fchecksum and not self.isDummyChecksum(fchecksum):
             pilotErrorDiag = "Remote and local checksums (of type %s) do not match for %s (%s != %s)" %\
-                             (csumtype, os.path.basename(dest_path), dstfchecksum, fchecksum) 
+                             (csumtype, os.path.basename(dest_path), dstfchecksum, fchecksum)
             tolog("!!WARNING!!2999!! %s" % (pilotErrorDiag))
 
             # remove the local file before any get retry is attempted
@@ -280,8 +280,8 @@ class BNLdCacheSiteMover(dCacheSiteMover.dCacheSiteMover):
             else:
                 self.prepareReport('MD5_MISMATCH', report)
                 return error.ERR_GETMD5MISMATCH, pilotErrorDiag
-            
-        updateFileState(lfn, workDir, jobId, mode="file_state", state="transferred", type="input")
+
+        updateFileState(lfn, workDir, jobId, mode="file_state", state="transferred", ftype="input")
         self.prepareReport('DONE', report)
         return 0, pilotErrorDiag
 
@@ -302,16 +302,16 @@ class BNLdCacheSiteMover(dCacheSiteMover.dCacheSiteMover):
         analJob = pdict.get('analJob', False)
         testLevel = pdict.get('testLevel', '0')
 
-        # get the DQ2 tracing report
+        # get the Rucio tracing report
         report = self.getStubTracingReport(pdict['report'], 'BNLdCache', lfn, guid)
 
         ec, pilotErrorDiag = verifySetupCommand(error, self._setup)
         if ec != 0:
             self.prepareReport('RFCP_FAIL', report)
-            return self.put_data_retfail(ec, pilotErrorDiag) 
+            return self.put_data_retfail(ec, pilotErrorDiag)
 
         filename = os.path.basename(source)
-        _tmp = destination.split('/', 3)      
+        _tmp = destination.split('/', 3)
         locse = '/'+ _tmp[3]
         ftpserv = _tmp[0] + '//' + _tmp[2]
         subpath = self.genSubpath(dsname, filename, logFile)
@@ -370,14 +370,14 @@ class BNLdCacheSiteMover(dCacheSiteMover.dCacheSiteMover):
         destpfn = os.path.join(sedir, filename)
         fail = 0
 
-        # get the DQ2 site name from ToA
+        # get the Rucio site name from ToA
         try:
-            _dq2SiteName = self.getDQ2SiteName(surl=destpfn)
+            _RSE = self.getRSE(surl=destpfn)
         except Exception, e:
-            tolog("Warning: Failed to get the DQ2 site name: %s (can not add this info to tracing report)" % str(e))
+            tolog("Warning: Failed to get RSE: %s (can not add this info to tracing report)" % str(e))
         else:
-            report['localSite'], report['remoteSite'] = (_dq2SiteName, _dq2SiteName)
-            tolog("DQ2 site name: %s" % (_dq2SiteName))
+            report['localSite'], report['remoteSite'] = (_RSE, _RSE)
+            tolog("RSE: %s" % (_RSE))
 
         if testLevel == "1":
             source = "thisisjustatest"
@@ -422,7 +422,7 @@ class BNLdCacheSiteMover(dCacheSiteMover.dCacheSiteMover):
                         pilotErrorDiag += " (failed to remove readOnly file: %s)" % (o)
                         tolog('!!WARNING!!2999!! Could not remove file: %s' % o)
                         fail = error.ERR_FAILEDRM
-                if s == 0:        
+                if s == 0:
                     tolog("Re-attempting copy command: %s" % (cmd))
                     s, o = commands.getstatusoutput(cmd)
                     if s != 0:
@@ -542,5 +542,5 @@ class BNLdCacheSiteMover(dCacheSiteMover.dCacheSiteMover):
                         return None
                     else:
                         return pnfsid
-                    
+
         return None

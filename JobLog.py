@@ -7,7 +7,7 @@ from shutil import copy2, rmtree
 
 import Mover as mover
 from PilotErrors import PilotErrors
-from pUtil import tolog, readpar, isLogfileCopied, isAnalysisJob, removeFiles, getFileGuid, PFCxml, createLockFile, getMetadata, returnLogMsg, removeLEDuplicates, getPilotlogFilename, remove, getExeErrors, updateJobState, makeJobReport, chdir, addSkippedToPFC, updateMetadata, getJobReport, filterJobReport, timeStamp, getPilotstderrFilename, safe_call, updateXMLWithSURLs, putMetadata, getCmtconfig, getExperiment, getSiteInformation, getGUID
+from pUtil import tolog, readpar, isLogfileCopied, isAnalysisJob, removeFiles, getFileGuid, PFCxml, createLockFile, getMetadata, returnLogMsg, removeLEDuplicates, getPilotlogFilename, remove, getExeErrors, updateJobState, makeJobReport, chdir, addSkippedToPFC, updateMetadata, getJobReport, filterJobReport, timeStamp, getPilotstderrFilename, safe_call, updateXMLWithSURLs, putMetadata, getCmtconfig, getExperiment, getSiteInformation, getGUID, timedCommand
 from FileHandling import addToOSTransferDictionary, getWorkDirSizeFilename, getDirSize, storeWorkDirSize
 from JobState import JobState
 from FileState import FileState
@@ -110,18 +110,19 @@ class JobLog:
 
             # do log transfer
             tolog("Attempting log file transfer to special SE")
-            ret, job = self.transferActualLogFile(job, site, dest=dest, jr=jr, specialTransfer=True)
+            ret, job = self.transferActualLogFile(job, site, experiment, dest=dest, jr=jr, specialTransfer=True)
             if not ret:
                 tolog("!!WARNING!!1600!! Could not transfer log file to special SE")
                 #status = False
             else:
                 # Update the OS transfer dictionary
                 # Get the OS name identifier and bucket endpoint
-                os_name = si.getObjectstoreName("eventservice")
+                os_name = si.getObjectstoreName("logs")
                 os_bucket_endpoint = si.getObjectstoreBucketEndpoint("logs")
+                os_bucket_id = job.logBucketID
 
                 # Add the transferred file to the OS transfer file
-                addToOSTransferDictionary(job.logFile, self.__env['pilot_initdir'], os_name, os_bucket_endpoint)
+                addToOSTransferDictionary(job.logFile, self.__env['pilot_initdir'], os_bucket_id, os_bucket_endpoint)
 
             # finally restore the modified schedconfig fields
             tolog("Restoring queuedata fields")
@@ -132,19 +133,17 @@ class JobLog:
 
         # register/copy log file
         tolog("Attempting log file transfer to primary SE")
-        ret, job = self.transferActualLogFile(job, site, dest=dest, jr=jr)
+        ret, job = self.transferActualLogFile(job, site, experiment, dest=dest, jr=jr)
         if not ret:
             tolog("!!%s!!1600!! Could not transfer log file to primary SE" % (self.__env['errorLabel']))
             status = False
 
         return status, job
 
-    def transferActualLogFile(self, job, site, dq2url=None, dest=None, jr=False, specialTransfer=False):
+    def transferActualLogFile(self, job, site, experiment, dest=None, jr=False, specialTransfer=False):
         """
         Save log tarball in DDM and register it to catalog, or copy it to 'dest'.
-        the job recovery will use the current site info known by the current
-        pilot and will override the old jobs' site.dq2url in case the dq2url
-        has been updated
+        the job recovery will use the current site info known by the current pilot
         """
 
         status = True
@@ -156,7 +155,7 @@ class JobLog:
             self.__env['errorLabel'] = "FAILED"
 
         # only check for performed log transfer for normal stage-out (not for any special transfers)
-        if isLogfileCopied(site.workdir) and not specialTransfer:
+        if isLogfileCopied(site.workdir, job.jobId) and not specialTransfer:
             tolog("Log file already transferred")
             return status, job
 
@@ -174,12 +173,6 @@ class JobLog:
 
         # see if it's an analysis job or not
         analyJob = isAnalysisJob(job.trf.split(",")[0])
-
-        # use the site.dq2url as dq2url unless dq2url has been explicitly set by the caller.
-        # the job recovery sets dq2url explicitly in the call to override any old urls that might
-        # be outdated
-        if not dq2url:
-            dq2url = site.dq2url
 
         # remove any lingering input files from the work dir
         if len(job.inFiles) > 0:
@@ -209,22 +202,21 @@ class JobLog:
         _msg = ""
         latereg = False
 
-        # determine the file path for special log transfers
+        # determine the file path for special log transfers (can be overwritten in mover_put_data() in case of failure in transfer to primary OS)
         if specialTransfer:
-            logPath = self.getLogPath(job.jobId, job.logFile, job.experiment)
+            logPath, os_bucket_id = self.getLogPath(job.jobId, job.logFile, job.experiment)
             if logPath == "":
                 tolog("!!WARNING!!4444!! Can not continue with special transfer since logPath is not set")
                 return False, job
             tolog("Special log transfer: %s" % (logPath))
         else:
             logPath = ""
-
+            os_bucket_id = -1
         try:
-            rc, pilotErrorDiag, rf, rs, N_filesNormalStageOut, N_filesAltStageOut = mover.mover_put_data("xmlcatalog_file:%s" % (WDTxml),
+            rc, pilotErrorDiag, rf, rs, N_filesNormalStageOut, N_filesAltStageOut, os_bucket_id = mover.mover_put_data("xmlcatalog_file:%s" % (WDTxml),
                                                                   dsname,
                                                                   site.sitename,
                                                                   site.computingElement,
-                                                                  ub = dq2url,
                                                                   analysisJob = analyJob,
                                                                   scopeLog = job.scopeLog,
                                                                   testLevel = self.__env['testLevel'],
@@ -246,7 +238,9 @@ class JobLog:
                                                                   recoveryWorkDir = site.workdir,
                                                                   experiment = job.experiment,
                                                                   fileDestinationSE = job.fileDestinationSE,
-                                                                  logPath = logPath, job=job) ##
+                                                                  logPath = logPath,
+                                                                  os_bucket_id = os_bucket_id,
+                                                                  job = job)
         except Exception, e:
             rmflag = 0 # don't remove the tarball
             status = False
@@ -296,7 +290,14 @@ class JobLog:
             else:
                 # create a weak lock file for the log transfer (but not for any special transfer, ie the log transfer to the special/secondary log area)
                 if not specialTransfer:
-                    createLockFile(self.__env['jobrec'], site.workdir, lockfile="LOGFILECOPIED")
+                    createLockFile(self.__env['jobrec'], site.workdir, lockfile="LOGFILECOPIED_%s" % job.jobId)
+
+                # to which OS bucket id was the file transferred to?
+                if os_bucket_id != -1:
+                    # get the site information object
+                    #si = getSiteInformation(experiment)
+                    job.logBucketID = os_bucket_id #si.getBucketID(os_id, "logs")
+                    tolog("Stored log bucket ID: %d" % (job.logBucketID)) 
 
             # set the error code for the log transfer only if there was no previous error (e.g. from the get-operation)
             if job.result[2] == 0:
@@ -1037,7 +1038,7 @@ class JobLog:
             _state = ""
             _msg = ""
             try:
-                ec, pilotErrorDiag, rf, rs, N_filesNormalStageOut, N_filesAltStageOut = mover.mover_put_data("xmlcatalog_file:%s" % (filename_xml),
+                ec, pilotErrorDiag, rf, rs, N_filesNormalStageOut, N_filesAltStageOut, os_bucket_id = mover.mover_put_data("xmlcatalog_file:%s" % (filename_xml),
                                                                   dsname, site.sitename, site.computingElement, analysisJob = analyJob,
                                                                   testLevel = self.__env['testLevel'],
                                                                   proxycheck = self.__env['proxycheckFlag'],
@@ -1126,7 +1127,7 @@ class JobLog:
             tolog("Work directory size dictionary not created (will create it now)")
             size = getDirSize(job.workdir)
 
-            # Store the measured disk space (the max value will later be sent with the job metrics)                                                                           
+            # Store the measured disk space (the max value will later be sent with the job metrics)
             jobDic = {}
             jobDic['prod'] = [0, job, 0]
             status = storeWorkDirSize(size, self.__env['pilot_initdir'], jobDic)
@@ -1140,20 +1141,21 @@ class JobLog:
         except OSError:
             tolog("!!WARNING!!1400!! Could not move job workdir %s to %s" % (job.workdir, job.newDirNM))
         else:
-            try:
-                cmd = "pwd;tar cvf %s %s --dereference" % (tarballNM, job.newDirNM)
-                tolog("Executing command: %s" % (cmd))
-                os.system(cmd)
-            except OSError:
-                tolog("!!WARNING!!1400!! Could not create tarball %s" % tarballNM)
+            timeout = 55*60
+            # add an echo $? to mask any tar error code - for now - otherwise it can cause the time-out of the tar
+            # to return an error code when we don't want it to, e.g. in evgen jobs that have broken soft links
+            # the pilot should remove the broken links before though. later, the pilot should fail if the log file
+            # is too big
+            cmd = "pwd;tar cvf %s %s --dereference; echo $?" % (tarballNM, job.newDirNM)
+            exitcode, output = timedCommand(cmd, timeout=timeout)
+            if exitcode != 0:
+                tolog("!!WARNING!!4343!! Log file creation failed: %d, %s" % (exitcode, output))
             else:
                 tolog("Tarball created: %s" % (tarballNM))
-                try:
-                    cmd = "gzip -f %s" % (tarballNM)
-                    tolog("Executing command: %s" % (cmd))
-                    os.system(cmd)
-                except OSError:
-                    tolog("!!WARNING!!1400!! Could not gzip tarball")
+                cmd = "gzip -f %s" % (tarballNM)
+                exitcode, output = timedCommand(cmd, timeout=timeout)
+                if exitcode != 0:
+                    tolog("!!WARNING!!4343!! Log file zip failed: %d, %s" % (exitcode, output))
                 else:
                     try:
                         os.rename("%s.gz" % (tarballNM), job.logFile)
@@ -1217,16 +1219,19 @@ class JobLog:
         # The host and base path is read from schedconfig, and can be a ,-separated list.
         # If the "primary"-boolean is True, the first location will be selected. False means the second location, if any
         # In case there is only one host defined in the schedconfig.logPath, primary=False is meaningless (abort).
+        # In case of objectstores, also the os_bucket_id will be returned (otherwise set to -1)
 
         # Standard path
-        # logPaths = readpar('logPath')
+        # logPaths = readpar('copytoollogPath')
         # logPaths = "root://eos.cern.ch/atlas/logs,dav://bnldav.cern.ch/atlas/logs"
         # logPaths = "root://eosatlas.cern.ch/atlas/logs"
+
+        os_bucket_id = -1
 
         # Get the site information object
         si = getSiteInformation(experiment)
         #logPaths = "root://atlas-objectstore.cern.ch//atlas/logs"
-        logPaths = si.getObjectstorePath("logs") #mover.getFilePathForObjectStore(filetype="logs")
+        logPaths, os_bucket_id = si.getObjectstorePath("logs", queuename=self.__env['queuename']) #mover.getFilePathForObjectStore(filetype="logs")
 
         # Handle multiple paths (primary and secondary log paths)
         if "," in logPaths:
@@ -1253,4 +1258,4 @@ class JobLog:
         else:
             logPath = ""
 
-        return logPath
+        return logPath, os_bucket_id

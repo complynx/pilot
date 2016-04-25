@@ -12,7 +12,7 @@
 
 import os, re
 import commands
-from time import time
+from time import time, sleep
 
 import SiteMover
 from futil import *
@@ -226,6 +226,10 @@ class GFAL2SiteMover(SiteMover.SiteMover):
 
                 # add port number from se to getfile if necessary
                 path = self.addPortToPath(se, path)
+
+        siteInformation = SiteInformation()
+        path = siteInformation.getCopyPrefixPath(path, stageIn=True)
+
         return path
 
     def getStageInMode(self, lfn, prodDBlockToken):
@@ -243,7 +247,6 @@ class GFAL2SiteMover(SiteMover.SiteMover):
         siteInformation = SiteInformation()
         directIn, transfer_mode = siteInformation.getDirectInAccessMode(prodDBlockToken, isRootFileName)
         if transfer_mode:
-            #updateFileState(lfn, workDir, jobId, mode="transfer_mode", state=transfer_mode, type="input")
             output["transfer_mode"] = transfer_mode
         if directIn:
             output["report"]["clientState"] = 'FOUND_ROOT'
@@ -476,7 +479,7 @@ class GFAL2SiteMover(SiteMover.SiteMover):
 
         return 0, outputRet
 
-    def stageOutFile(self, source, destination, token=None):
+    def stageOutFile(self, source, destination, token=None, outputDir=None):
         """Stage out the file. Should be implementated by different site mover"""
         statusRet = 0
         outputRet = {}
@@ -503,7 +506,10 @@ class GFAL2SiteMover(SiteMover.SiteMover):
             if "dst:" in token:
                 token = token[len('dst:'):]
                 tolog("Dropped dst: part of space token descriptor; token=%s" % (token))
-                token = "ATLASGROUPDISK"
+                if 'DATADISK' in token:
+                    token = "ATLASDATADISK"
+                else:
+                    token = "ATLASGROUPDISK"
                 tolog("Space token descriptor reset to: %s" % (token))
 
             _cmd_str = '%s gfal-copy --verbose %s -D "SRM PLUGIN:TURL_PROTOCOLS=gsiftp" -S %s file:%s %s' % (self._setup, timeout_option, token, source, destination)
@@ -511,18 +517,49 @@ class GFAL2SiteMover(SiteMover.SiteMover):
             # surl is the same as putfile
             _cmd_str = '%s gfal-copy --verbose %s -D "SRM PLUGIN:TURL_PROTOCOLS=gsiftp" file:%s %s' % (self._setup, timeout_option, source, destination)
 
-
-        tolog("Executing command: %s" % (_cmd_str))
         ec = -1
         t0 = os.times()
         o = '(not defined)'
-        outputRet["report"]['relativeStart'] = time()
-        outputRet["report"]['transferStart'] =  time()
-        try:
-            ec, o = commands.getstatusoutput(_cmd_str)
-        except Exception, e:
-            tolog("!!WARNING!!2999!! gfal-copy threw an exception: %s" % (o))
-            o = str(e)
+        if outputDir and outputDir.endswith("PilotMVOutputDir"):
+            timeStart = time()
+            outputFile = os.path.join(outputDir, os.path.basename(source))
+            mvCmd = "cp -f %s %s" % (source, outputFile)
+            tolog("Executing command: %s" % (mvCmd))
+            lstatus, loutput = commands.getstatusoutput(mvCmd)
+            if lstatus != 0:
+                ec = lstatus
+                o = loutput
+            else:
+                outputFileCmd = outputFile + ".gfalcmd"
+                handle = open(outputFileCmd, 'w')
+                handle.write(_cmd_str.replace(source, outputFile))
+                handle.close()
+                tolog("Write command %s to %s" % (_cmd_str.replace(source, outputFile), outputFileCmd))
+                tolog("Waiting remote to finish transfer")
+                o = "Remote timeout to transfer out file"
+                while (time() - timeStart) < self.timeout:
+                    sleep(5)
+                    if os.path.exists(outputFile + ".gfalcmdfinished"):
+                        ec = 0
+                        o = "Remote finished transfer"
+                        tolog(o)
+                        os.remove(outputFile + ".gfalcmdfinished")
+                        break
+                    if os.path.exists(outputFile + ".gfalcmdfailed"):
+                        ec = 0
+                        o = "Remote finished transfer"
+                        tolog(o)
+                        os.remove(outputFile + ".gfalcmdfailed")
+                        break
+        else:
+            tolog("Executing command: %s" % (_cmd_str))
+            outputRet["report"]['relativeStart'] = time()
+            outputRet["report"]['transferStart'] =  time()
+            try:
+                ec, o = commands.getstatusoutput(_cmd_str)
+            except Exception, e:
+                tolog("!!WARNING!!2999!! gfal-copy threw an exception: %s" % (o))
+                o = str(e)
         outputRet["report"]['validateStart'] = time()
         t1 = os.times()
         t = t1[4] - t0[4]
@@ -704,7 +741,7 @@ class GFAL2SiteMover(SiteMover.SiteMover):
 
         return status, outputRet
 
-    def stageOut(self, source, destination, token, experiment):
+    def stageOut(self, source, destination, token, experiment, outputDir=None):
         """Stage in the source file"""
         statusRet = 0
         outputRet ={}
@@ -731,7 +768,7 @@ class GFAL2SiteMover(SiteMover.SiteMover):
         if checksumType == "default":
             checksumType = "adler32"
 
-        status, output = self.stageOutFile(source, destination, token)
+        status, output = self.stageOutFile(source, destination, token, outputDir=outputDir)
         if status !=0:
             statusRet = status
             outputRet["errorLog"] = output["errorLog"]
@@ -762,13 +799,13 @@ class GFAL2SiteMover(SiteMover.SiteMover):
         useCT = pdict.get('usect', True)
         prodDBlockToken = pdict.get('access', '')
 
-        # get the DQ2 tracing report
+        # get the Rucio tracing report
         report = self.getStubTracingReport(pdict['report'], 'gfal-copy', lfn, guid)
 
 
         status, output = self.getStageInMode(lfn, prodDBlockToken)
         if output["transfer_mode"]:
-            updateFileState(lfn, workDir, jobId, mode="transfer_mode", state=output["transfer_mode"], type="input")
+            updateFileState(lfn, workDir, jobId, mode="transfer_mode", state=output["transfer_mode"], ftype="input")
         if status !=0:
             self.prepareReport(output["report"], report)
             return status, output["errorLog"]
@@ -779,7 +816,7 @@ class GFAL2SiteMover(SiteMover.SiteMover):
         status, output = self.stageIn(gpfn, fullname, fsize, fchecksum, experiment)
 
         if status == 0:
-            updateFileState(lfn, workDir, jobId, mode="file_state", state="transferred", type="input")
+            updateFileState(lfn, workDir, jobId, mode="file_state", state="transferred", ftype="input")
 
         self.prepareReport(output["report"], report)
         return status, output["errorLog"]
@@ -805,6 +842,7 @@ class GFAL2SiteMover(SiteMover.SiteMover):
         experiment = pdict.get('experiment', '')
         proxycheck = pdict.get('proxycheck', False)
         prodSourceLabel = pdict.get('prodSourceLabel', '')
+        outputDir = pdict.get('outputDir', '')
 
         # get the site information object
         si = getSiteInformation(experiment)
@@ -814,7 +852,7 @@ class GFAL2SiteMover(SiteMover.SiteMover):
             tolog("Treating PanDA Mover job as a production job during stage-out")
             analysisJob = False
 
-        # get the DQ2 tracing report
+        # get the Rucio tracing report
         report = self.getStubTracingReport(pdict['report'], 'gfal-copy', lfn, guid)
 
 
@@ -828,19 +866,19 @@ class GFAL2SiteMover(SiteMover.SiteMover):
             self.prepareReport(reportState, report)
             return self.put_data_retfail(ec, pilotErrorDiag)
 
-        # get the DQ2 site name from ToA
+        # get the RSE from ToA
         try:
-            _dq2SiteName = self.getDQ2SiteName(surl=surl)
+            _RSE = self.getRSE(surl=surl)
         except Exception, e:
-            tolog("Warning: Failed to get the DQ2 site name: %s (can not add this info to tracing report)" % str(e))
+            tolog("Warning: Failed to get RSE: %s (can not add this info to tracing report)" % str(e))
         else:
-            report['localSite'], report['remoteSite'] = (_dq2SiteName, _dq2SiteName)
-            tolog("DQ2 site name: %s" % (_dq2SiteName))
+            report['localSite'], report['remoteSite'] = (_RSE, _RSE)
+            tolog("RSE: %s" % (_RSE))
 
         if testLevel == "1":
             source = "thisisjustatest"
 
-        status, output = self.stageOut(source, surl, token, experiment)
+        status, output = self.stageOut(source, surl, token, experiment, outputDir=outputDir)
         if status !=0:
             self.prepareReport(output["report"], report)
             return self.put_data_retfail(status, output["errorLog"], surl)

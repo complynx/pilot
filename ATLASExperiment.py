@@ -14,16 +14,19 @@ from pUtil import grep                          # Grep function - reimplement us
 from pUtil import getCmtconfig                  # Get the cmtconfig from the job def or queuedata
 from pUtil import getCmtconfigAlternatives      # Get a list of locally available cmtconfigs
 from pUtil import verifyReleaseString           # To verify the release string (move to Experiment later)
-from pUtil import getProperTimeout              # 
+from pUtil import getProperTimeout              #
 from pUtil import timedCommand                  # Protect cmd with timed_command
 from pUtil import getSiteInformation            # Get the SiteInformation object corresponding to the given experiment
 from pUtil import isBuildJob                    # Is the current job a build job?
 from pUtil import remove                        # Used to remove redundant file before log file creation
 from pUtil import extractFilePaths              # Used by verifySetupCommand
 from pUtil import getInitialDirs                # Used by getModernASetup()
+from pUtil import isAGreaterOrEqualToB          #
+from pUtil import convert_unicode_string        # Needed to avoid unicode strings in the memory output text file
 from PilotErrors import PilotErrors             # Error codes
 from FileHandling import readFile, writeFile    # File handling methods
 from FileHandling import updatePilotErrorReport # Used to set the priority of an error
+from FileHandling import getJSONDictionary      # Used by getUtilityInfo()
 from RunJobUtilities import dumpOutput          # ASCII dump
 from RunJobUtilities import getStdoutFilename   #
 from RunJobUtilities import findVmPeaks         #
@@ -115,6 +118,169 @@ class ATLASExperiment(Experiment):
         return cmd2
 
     def getJobExecutionCommand(self, job, jobSite, pilot_initdir):
+        """ Define and test the command(s) that will be used to execute the payload """
+
+        pilotErrorDiag = ""
+        cmd = ""
+        special_setup_cmd = ""
+        pysiteroot = ""
+        siteroot = ""
+        JEM = "NO"
+
+        # homePackage variants:
+        #   user jobs
+        #     1. AnalysisTransforms (using asetup)
+        #        Setup example buildJob: (the local/setup comes from copysetup; ignore the cmtsite in the path, this will go away with the new setup procedure)
+        #          old setup:
+        #            cmd = export PANDA_RESOURCE="ANALY_PIC_SL6";export ROOT_TTREECACHE_SIZE=1;export FRONTIER_ID="[2674166005]";export CMSSW_VERSION=$FRONTIER_ID;export RUCIO_APPID="panda-client-0.5.56-jedi-athena";export RUCIO_ACCOUNT="pilot";export ROOTCORE_NCPUS=1;source /cvmfs/atlas.cern.ch/repo/sw/software/x86_64-slc6-gcc47-opt/19.2.0/cmtsite/asetup.sh 19.2.0,notest --cmtconfig x86_64-slc6-gcc47-opt ;export MAKEFLAGS="j1 QUICK=1 -l1";source /cvmfs/atlas.cern.ch/repo/sw/local/setup.sh;export X509_USER_PROXY=<path>;./buildJob-00-00-03 ..
+        #          new setup:
+        #            cmd =
+        #        Setup example runAthena:
+        #          old setup:
+        #            cmd = export PANDA_RESOURCE="ANALY_BNL_LONG";export ROOT_TTREECACHE_SIZE=1;export FRONTIER_ID="[2674156736]";export CMSSW_VERSION=$FRONTIER_ID;export RUCIO_APPID="panda-client-0.5.56-jedi-athena";export RUCIO_ACCOUNT="pilot";export ROOTCORE_NCPUS=1;source /cvmfs/atlas.cern.ch/repo/sw/software/x86_64-slc6-gcc47-opt/19.2.0/cmtsite/asetup.sh 19.2.0,notest --cmtconfig x86_64-slc6-gcc47-opt ;export MAKEFLAGS="j1 QUICK=1 -l1";export X509_USER_PROXY=<path>;./runAthena-00-00-12 .. 
+        #          new setup:
+        #            cmd =
+        #        Setup example buildGen:
+        #          old setup:
+        #            cmd = export PANDA_RESOURCE=\"ANALY_DESY-HH\";export ROOT_TTREECACHE_SIZE=1;export FRONTIER_ID=\"[2674275586]\";export CMSSW_VERSION=$FRONTIER_ID;export RUCIO_APPID=\"panda-client-0.5.56-jedi-run\";export RUCIO_ACCOUNT=\"pilot\";export ROOTCORE_NCPUS=1;source /cvmfs/atlas.cern.ch/repo/sw/software/i686-slc5-gcc43-opt/17.3.11/cmtsite/asetup.sh 17.3.11,notest --cmtconfig i686-slc5-gcc43-opt ;export MAKEFLAGS=\"j1 QUICK=1 -l1\";export X509_USER_PROXY=<path>;./buildGen-00-00-01 ..
+        #          new setup:
+        #            cmd =
+        #     2. AnalysisTransforms-<project>_<cache>, e.g. project=AthAnalysisBase,AtlasDerivation,AtlasProduction,MCProd,TrigMC; cache=20.1.6.2,..
+        #        Setup example
+        #          old setup:
+        #            cmd = 
+        #     3. AnalysisTransforms-<project>_rel_<N>, e.g. project=AtlasOffline; N=0,1,2,..
+        #        Setup example
+        #          old setup:
+        #            cmd = 
+        #     4. [homaPackage not set]
+        #        Setup example runGen:
+        #          old setup:
+        #            cmd = export PANDA_RESOURCE="ANALY_LPC";export ROOT_TTREECACHE_SIZE=1;export FRONTIER_ID="[2673995173]";export CMSSW_VERSION=$FRONTIER_ID;export RUCIO_APPID="gangarobot-rctest";export RUCIO_ACCOUNT="pilot";export ROOTCORE_NCPUS=1;export X509_USER_PROXY=<path>;./runGen-00-00-02 .. 
+        #          new setup:
+        #            cmd =
+        #        Setup example buildGen:
+        #          old setup:
+        #            cmd = export PANDA_RESOURCE=\"ANALY_TRIUMF\";export ROOT_TTREECACHE_SIZE=1;export FRONTIER_ID=\"[2674133638]\";export CMSSW_VERSION=$FRONTIER_ID;export RUCIO_APPID=\"panda-client-0.5.56-jedi-run\";export RUCIO_ACCOUNT=\"pilot\";export ROOTCORE_NCPUS=1;source /cvmfs/atlas.cern.ch/repo/sw/local/setup.sh;export X509_USER_PROXY=<path>;./buildGen-00-00-01 
+        #          new setup:
+        #            cmd =
+        #
+        #   production jobs
+        #     1. <project>/<cache>, e.g. AtlasDerivation/20.1.6.2, AtlasProd1/20.1.5.10.1
+        #        Setup example
+        #          old setup:
+        #            cmd = export PANDA_RESOURCE=\"FZK-LCG2\";export FRONTIER_ID=\"[2674134772]\";export CMSSW_VERSION=$FRONTIER_ID;export RUCIO_APPID=\"merge\";export RUCIO_ACCOUNT=\"pilot\";source /cvmfs/atlas.cern.ch/repo/sw/software/i686-slc5-gcc43-opt/17.2.1/cmtsite/asetup.sh 17.2.1,notest --cmtconfig i686-slc5-gcc43-opt ;unset CMTPATH;cd /cvmfs/atlas.cern.ch/repo/sw/software/i686-slc5-gcc43-opt/17.2.1/TrigMC/17.2.1.4.3/TrigMCRunTime/cmt;source ./setup.sh;cd -;export AtlasVersion=17.2.1.4.3;export AtlasPatchVersion=17.2.1.4.3;Merging_trf.py
+        #          new setup:
+        #            cmd =
+        #     2. <project>,rel_<N>[,devval], e.g. AtlasProduction,rel_4,devval
+        #
+        # Tested
+        #   AtlasG4_tf.py:
+        #     PandaID=2675460595
+        #     Release=17.7.3
+        #     homePackage=MCProd/17.7.3.9.6
+        #   Sim_tf.py:
+        #     PandaID=2675460792
+        #     Release=1.0.3
+        #     homePackage=AthSimulationBase/1.0.3
+        #   Sim_tf.py, event service:
+        #     PandaID=2676267339
+        #     Release=Atlas-20.3.3
+        #     homePackage=AtlasProduction/20.3.3.2
+        #   Reco_tf.py:
+        #     PandaID=2675925382
+        #     Release=20.1.5
+        #     homePackage=AtlasProduction/20.1.5.10
+
+
+        # Is it a user job or not?
+        analysisJob = isAnalysisJob(job.trf)
+
+        # Get the cmtconfig value
+        cmtconfig = getCmtconfig(job.cmtconfig)
+
+        # Is it a standard ATLAS job? (i.e. with swRelease = 'Atlas-...') USE OLD FUNCTION FOR USER JOBS FOR NOW
+        if not self.__atlasEnv or analysisJob:
+            return self.getJobExecutionCommandOld(job, jobSite, pilot_initdir)
+
+            # Set the INDS env variable (used by runAthena)
+#            self.setINDS(job.realDatasetsIn)
+
+            # Try to download the trf
+#            status, pilotErrorDiag, trfName = self.getAnalysisTrf(wgetCommand, job.trf, pilot_initdir)
+#            if status != 0:
+#                return status, pilotErrorDiag, "", special_setup_cmd, JEM, cmtconfig
+
+#        # Command used to download runAthena or runGen
+#        wgetCommand = 'wget'
+
+        else:
+
+            # Normal setup (production and user jobs)
+
+            # Extract the project (cacheDir) and cache version, if any
+            m_cacheDirVer = re.search('AnalysisTransforms-([^/]+)', job.homePackage) # User jobs
+            if m_cacheDirVer != None:
+                # user jobs
+                cacheDir, cacheVer = self.getCacheInfo(m_cacheDirVer, job.release)
+            elif "," in job.homePackage or "rel_" in job.homePackage:
+                # nightlies; e.g. homePackage = "AtlasProduction,rel_0"
+                cacheDir = job.homePackage
+                cacheVer = None
+            else:
+                # normal production jobs; e.g. homePackage = "AtlasProduction/20.1.5"
+                cacheDir, cacheVer = self.getSplitHomePackage(job.homePackage)
+
+            # Define the setup for asetup, i.e. including full path to asetup and setting of ATLAS_LOCAL_ROOT_BASE
+            asetup_path = self.getModernASetup()
+
+            # Add the appropriate options (release/patch/project/cache)
+            asetup_options = " "
+            if cacheDir:
+                asetup_options += cacheDir
+            if cacheVer:
+                if asetup_options == " ":
+                    asetup_options += cacheVer
+                else:
+                    asetup_options += "," + cacheVer
+            asetup_options += " --cmtconfig " + cmtconfig
+
+            cmd = asetup_path + asetup_options
+
+        # Add the transform and the job parameters
+        cmd += ";%s %s" % (job.trf, job.jobPars)
+
+        # Add FRONTIER debugging and RUCIO env variables
+        if 'HPC_' in readpar("catchall") and 'HPC_HPC' not in readpar("catchall"):
+            cmd['environment'] = self.getEnvVars2Cmd(job.jobId, job.processingType, jobSite.sitename, analysisJob)
+        else:
+            cmd = self.addEnvVars2Cmd(cmd, job.jobId, job.processingType, jobSite.sitename, analysisJob)
+        if 'HPC_HPC' in readpar("catchall"):
+            cmd = 'export JOB_RELEASE=%s;export JOB_HOMEPACKAGE=%s;JOB_CACHEVERSION=%s;JOB_CMTCONFIG=%s;%s' % (job.release, job.homePackage, cacheVer, cmtconfig, cmd)
+
+        # Is JEM allowed to be used?
+        if self.isJEMAllowed():
+            metaOut = {}
+            try:
+                import sys
+                from JEMstub import updateRunCommand4JEM
+                # If JEM should be used, the command will get updated by the JEMstub automatically.
+                cmd = updateRunCommand4JEM(cmd, job, jobSite, tolog, metaOut=metaOut)
+            except:
+                # On failure, cmd stays the same
+                tolog("Failed to update run command for JEM - will run unmonitored.")
+
+            # Is JEM to be used?
+            if metaOut.has_key("JEMactive"):
+                JEM = metaOut["JEMactive"]
+
+            tolog("Use JEM: %s (dictionary = %s)" % (JEM, str(metaOut)))
+
+        tolog("\nCommand to run the job is: \n%s" % (cmd))
+
+        return 0, pilotErrorDiag, cmd, special_setup_cmd, JEM, cmtconfig
+
+    def getJobExecutionCommandOld(self, job, jobSite, pilot_initdir):
         """ Define and test the command(s) that will be used to execute the payload """
 
         # Input tuple: (method is called from RunJob*)
@@ -228,7 +394,7 @@ class ATLASExperiment(Experiment):
                     cmd1 = self.updateCmd1WithProject(cmd1, atlasProject)
 
                 # Get cmd2 for production jobs for set installDirs (not the case for unset homepackage strings)
-                if installDir != "":
+                if installDir != "" and not "AthSimulation" in job.homePackage:
                     cmd2, pilotErrorDiag = self.getProdCmd2(installDir, job.homePackage)
                     if pilotErrorDiag != "":
                         return self.__error.ERR_SETUPFAILURE, pilotErrorDiag, "", special_setup_cmd, JEM, cmtconfig
@@ -430,6 +596,11 @@ class ATLASExperiment(Experiment):
                     if ec != 0:
                         return ec, pilotErrorDiag, "", special_setup_cmd, JEM, cmtconfig
 
+                # correct for multi-core if necessary (especially important in case coreCount=1 to limit parallel make)
+                cmd2 = self.addMAKEFLAGS(job.coreCount, "")
+                tolog("cmd2 = %s" % (cmd2))
+                cmd = cmd2 + cmd
+
                 # should asetup be used? If so, sqeeze it into the run command (rather than moving the entire getAnalysisRunCommand() into this class)
                 m_cacheDirVer = re.search('AnalysisTransforms-([^/]+)', job.homePackage)
                 if m_cacheDirVer != None:
@@ -469,7 +640,6 @@ class ATLASExperiment(Experiment):
                            "parameters": job.jobPars }
                 else:
                     cmd = "%s %s %s" % (pybin, job.trf, job.jobPars)
-                
 
             # Set special_setup_cmd if necessary
             special_setup_cmd = self.getSpecialSetupCommand()
@@ -477,7 +647,7 @@ class ATLASExperiment(Experiment):
         # add FRONTIER debugging and RUCIO env variables
         if 'HPC_' in readpar("catchall"):
             cmd['environment'] = self.getEnvVars2Cmd(job.jobId, job.processingType, jobSite.sitename, analysisJob)
-        else: 
+        else:
             cmd = self.addEnvVars2Cmd(cmd, job.jobId, job.processingType, jobSite.sitename, analysisJob)
 
         # Is JEM allowed to be used?
@@ -503,8 +673,6 @@ class ATLASExperiment(Experiment):
 
         tolog("\nCommand to run the job is: \n%s" % (cmd))
 
-        tolog("ATLAS_PYTHON_PILOT = %s" % (os.environ['ATLAS_PYTHON_PILOT']))
-
         if special_setup_cmd != "":
             tolog("Special setup command: %s" % (special_setup_cmd))
 
@@ -523,25 +691,15 @@ class ATLASExperiment(Experiment):
     def willDoFileLookups(self):
         """ Should (LFC) file lookups be done by the pilot or not? """
 
-        status = False
-
-        if readpar('lfchost') != "" and self.getFileLookups():
-            status = True
-
-        if status:
-            tolog("File lookups from %s" % (readpar('lfchost')))
-        else:
-            tolog("Will not do any file lookups")
-
-        return status
+        return self.getFileLookups()
 
     def willDoAlternativeFileLookups(self):
         """ Should file lookups be done using alternative methods? """
 
-        # E.g. in the migration period where LFC lookups are halted in favour of other methods in the DQ2/Rucio API
+        # E.g. in the migration period where LFC lookups are halted in favour of other methods in the Rucio API
         # (for ATLAS), this method could be useful. See the usage in Mover::getReplicaDictionary() which is called
         # after Experiment::willDoFileLookups() defined above. The motivation is that direct LFC calls are not to be
-        # used any longer by the pilot, and in the migration period the actual LFC calls will be done in the DQ2/Rucio
+        # used any longer by the pilot, and in the migration period the actual LFC calls will be done in the Rucio
         # API. Eventually this API will switch to alternative file lookups.
 
         tolog("Using alternative file catalog lookups")
@@ -575,7 +733,7 @@ class ATLASExperiment(Experiment):
                     "AtlasTier0",
                     "buildJob*",
                     "CDRelease*",
-                    "csc*.log", 
+                    "csc*.log",
                     "DBRelease*",
                     "EvgenJobOptions",
                     "external",
@@ -622,10 +780,24 @@ class ATLASExperiment(Experiment):
         except Exception, e:
             tolog("!!WARNING!!2341!! Failed to execure cleanupAthenaMP(): %s" % (e))
 
+        # explicitly remove any soft linked archives (.a files) since they will be dereferenced by the tar command (--dereference option)
+        matches = []
+        import fnmatch
+        for root, dirnames, filenames in os.walk(workdir):
+            for filename in fnmatch.filter(filenames, '*.a'):
+                matches.append(os.path.join(root, filename))
+        if matches != []:
+            tolog("!!WARNING!!4990!! Encountered %d archive files - will be purged" % len(matches))
+            rc = remove(matches)
+            if not rc:
+                tolog("WARNING: Failed to remove redundant files")
+        else:
+            tolog("Found no archive files")
+
         # note: these should be partitial file/dir names, not containing any wildcards
         exceptions_list = ["runargs", "runwrapper", "jobReport", "log."]
 
-        for _dir in dir_list: 
+        for _dir in dir_list:
             files = glob(os.path.join(workdir, _dir))
             exclude = []
 
@@ -634,7 +806,7 @@ class ATLASExperiment(Experiment):
                 for exc in exceptions_list:
                     for f in files:
                         if exc in f:
-                            exclude.append(f)		      
+                            exclude.append(f)
 
                 if exclude != []:
                     tolog('To be excluded from removal: %s' % (exclude))
@@ -649,6 +821,30 @@ class ATLASExperiment(Experiment):
                 rc = remove(files)
                 if not rc:
                     tolog("IGNORE: Failed to remove redundant file(s): %s" % (files))
+
+        # run a second pass to clean up any broken links
+        broken = []
+        for root, dirs, files in os.walk(workdir):
+            for filename in files:
+                path = os.path.join(root,filename)
+                if os.path.islink(path):
+                    target_path = os.readlink(path)
+                    # Resolve relative symlinks
+                    if not os.path.isabs(target_path):
+                        target_path = os.path.join(os.path.dirname(path),target_path)             
+                    if not os.path.exists(target_path):
+                        broken.append(path)
+                else:
+                    # If it's not a symlink we're not interested.
+                    continue
+
+        if broken != []:
+            tolog("!!WARNING!!4991!! Encountered %d broken soft links - will be purged" % len(broken))
+            rc = remove(broken)
+            if not rc:
+                tolog("WARNING: Failed to remove broken soft links")
+        else:
+            tolog("Found no broken links")
 
     def getWarning(self):
         """ Return any warning message passed to __warning """
@@ -688,21 +884,6 @@ class ATLASExperiment(Experiment):
                     tolog("No such path: %s (ignore)" % (path))
         else:
             tolog("Can not display ChangeLog: Found no appdir")
-
-    def testImportLFCModule(self):
-        """ Can the LFC module be imported? """
-
-        status = False
-
-        try:
-            import lfc
-        except Exception, e:
-            tolog("!!WARNING!!3111!! Failed to import the LFC module: %s" % (e))
-        else:
-            tolog("Successfully imported the LFC module")
-            status = True
-
-        return status
 
     def getCVMFSPath(self):
         """ Return the proper cvmfs path """
@@ -746,6 +927,16 @@ class ATLASExperiment(Experiment):
         if not job:
             tolog("!!WARNING!!2332!! getNumberOfEvents did not receive a job object")
             return 0, 0, ""
+
+        tolog("Looking for number of processed events (pass -1: jobReport.json)")
+
+        from FileHandling import getNumberOfEvents
+        nEventsRead = getNumberOfEvents(job.workdir)
+        nEventsWritten = 0
+        if nEventsRead > 0:
+            return nEventsRead, nEventsWritten, str(nEventsRead)
+        else:
+            nEventsRead = 0
 
         tolog("Looking for number of processed events (pass 0: metadata.xml)")
 
@@ -815,7 +1006,7 @@ class ATLASExperiment(Experiment):
                     for i in range(len(lrc_metadata_dom)):
                         _key = str(_file.getElementsByTagName("metadata")[i].getAttribute("att_name"))
                         _value = str(_file.getElementsByTagName("metadata")[i].getAttribute("att_value"))
-                        if _key == "events":
+                        if _key == "events" and _value:
                             try:
                                 N = int(_value)
                             except Exception, e:
@@ -992,12 +1183,12 @@ class ATLASExperiment(Experiment):
         ec = 0
         pilotErrorDiag = ""
 
-        # do not proceed for unset homepackage strings (treat as release strings in the following function)                                                                         
+        # do not proceed for unset homepackage strings (treat as release strings in the following function)
         if verifyReleaseString(job.homePackage) == "NULL":
             return ec, pilotErrorDiag, siteroot, ""
 
-        # install the trf in the work dir if it is not installed on the site                                                                                                        
-        # special case for nightlies (rel_N already in siteroot path, so do not add it)                                                                                             
+        # install the trf in the work dir if it is not installed on the site
+        # special case for nightlies (rel_N already in siteroot path, so do not add it)
 
         if "rel_" in job.homePackage:
             installDir = siteroot
@@ -1119,7 +1310,7 @@ class ATLASExperiment(Experiment):
             return 0, pilotErrorDiag
 
         # Install pacman
-        status, pilotErrorDiag = self.installPacman() 
+        status, pilotErrorDiag = self.installPacman()
         if status:
             tolog("Pacman installed correctly")
         else:
@@ -1341,14 +1532,17 @@ class ATLASExperiment(Experiment):
             pilotErrorDiag = "Detected severe CMT error: %d, %s" % (exitcode, _pilotErrorDiag)
             tolog("!!WARNING!!2992!! %s" % (pilotErrorDiag))
         elif exitcode != 0:
-            from futil import is_timeout
-            if is_timeout(exitcode):
-                pilotErrorDiag = "cmtsite command was timed out: %d, %s" % (exitcode, _pilotErrorDiag)
+            if "Command time-out" in _pilotErrorDiag:
+                pilotErrorDiag = "cmtsite command was timed out: %s, %s" % (str(exitcode), _pilotErrorDiag)
             else:
-                if "timed out" in _pilotErrorDiag:
+                from futil import is_timeout
+                if is_timeout(exitcode):
                     pilotErrorDiag = "cmtsite command was timed out: %d, %s" % (exitcode, _pilotErrorDiag)
                 else:
-                    pilotErrorDiag = "cmtsite command failed: %d, %s" % (exitcode, _pilotErrorDiag)
+                    if "timed out" in _pilotErrorDiag:
+                        pilotErrorDiag = "cmtsite command was timed out: %d, %s" % (exitcode, _pilotErrorDiag)
+                    else:
+                        pilotErrorDiag = "cmtsite command failed: %d, %s" % (exitcode, _pilotErrorDiag)
 
             tolog("!!WARNING!!2992!! %s" % (pilotErrorDiag))
         else:
@@ -1373,7 +1567,7 @@ class ATLASExperiment(Experiment):
         pilotErrorDiag = self.verifyCmtsiteCmd(exitcode, output)
         if pilotErrorDiag != "":
             return False, pilotErrorDiag, siteroot, "", ""
-        
+
         # Get cmtConfig
         re_cmtConfig = re.compile('CMTCONFIG=(.+)')
         _cmtConfig = re_cmtConfig.search(output)
@@ -1785,8 +1979,8 @@ class ATLASExperiment(Experiment):
             tolog("!!WARNING!!1887!! RUCIO_APPID needs job.processingType but it is not set!")
         else:
             variables.append('export RUCIO_APPID=\"%s\";' % (processingType))
-        variables.append('export RUCIO_ACCOUNT=\"pilot\";')         
-        
+        variables.append('export RUCIO_ACCOUNT=\"pilot\";')
+
         return variables
 
     def isForceConfigCompatible(self, _dir, release, homePackage, cmtconfig, siteroot=None):
@@ -1858,7 +2052,7 @@ class ATLASExperiment(Experiment):
                 for d in dirs:
                     if d.startswith(name):
                         _dirs.append(d)
-                if _dirs != []: 
+                if _dirs != []:
                     # sort the directories
                     _dirs.sort()
                     # grab the directory with the highest version
@@ -1922,6 +2116,9 @@ class ATLASExperiment(Experiment):
                 if ("AtlasP1HLT" in homePackage or "AtlasHLT" in homePackage) and os.environ.has_key('VO_ATLAS_RELEASE_DIR'):
                     tolog("Encountered HLT homepackage: %s (must use special siteroot)" % (homePackage))
                     siteroot = os.path.join(swbase, release)
+                elif homePackage.startswith('AthSimulation'):
+                    tolog("Encountered an Ath* release: %s" % (homePackage))
+                    siteroot = self.getSiterootWithHomepackage(swbase, homePackage, cmtconfig, release)
                 else:
                     # default SITEROOT on CVMFS
                     if "/cvmfs" in swbase:
@@ -1945,7 +2142,8 @@ class ATLASExperiment(Experiment):
             elif exitcode != 0 or "Error:" in output or "(ERROR):" in output:
                 # if time out error, don't bother with trying another cmtconfig
 
-                tolog("ATLAS setup for SITEROOT failed: ec=%d, output=%s" % (exitcode, output))
+                tolog("ATLAS setup for SITEROOT failed: ec=%s, output=%s" % (str(exitcode), output))
+
                 if "No such file or directory" in output:
                     pilotErrorDiag = "getProperSiterootAndCmtconfig: Missing installation: %s" % (output)
                     tolog("!!WARNING!!1996!! %s" % (pilotErrorDiag))
@@ -2020,34 +2218,85 @@ class ATLASExperiment(Experiment):
         return status, path
 
     def useAtlasSetup(self, swbase, release, homePackage, cmtconfig):
-        """ determine whether AtlasSetup is to be used """
+        """ Determine whether AtlasSetup is to be used """
 
-        status = False
+        # Previously this method returned False for older releases than 16.1.0. Since pilot release 64.0, this method returns True [i.e. use asetup for all ATLAS releases]
+        return True
 
-        # are we using at least release 16.1.0?
-        if release >= "16.1.0":
-            # the actual path is not needed in this method
-            status, _path = self.getVerifiedAtlasSetupPath(swbase, release, homePackage, cmtconfig)
+    def getSplitHomePackage(self, homePackage):
+        """ Split the homePackage if it has a project/release format """
+        # E.g. homePackage = AthSimulationBase/1.0.3 -> AthSimulationBase, 1.0.3
+        # homePackage = AnalysisTransforms-AtlasP1HLT_20.2.3.6 -> 'AtlasP1HLT', '20.2.3.6'
+
+        if "/" in homePackage:
+            s = homePackage.split('/')
+            project = s[0]
+            release = s[1]
         else:
-            pass
-            # tolog("Release %s is too old for AtlasSetup (need at least 16.1.0)" % (release))
+            if "AnalysisTransforms" in homePackage and ("AtlasP1HLT" in homePackage or "AtlasHLT" in homePackage):
+                homePackage = homePackage.replace("AnalysisTransforms-", "")
+                s = homePackage.split('_')
+                project = s[0]
+                release = s[1]
+            else:
+                project = homePackage
+                release = ""
 
-        return status
+        return project, release
+
+    def getSiterootWithHomepackage(self, swbase, homePackage, cmtconfig, release):
+        """ Use the homePackage to set the siteroot """
+
+        _project, _release = self.getSplitHomePackage(homePackage)
+        if _release != "": # i.e. "/" is present in homePackage:
+            path = os.path.join(swbase, _project) # E.g. /cvmfs/atlas.cern.ch/repo/sw/software/AthSimulationBase
+            path = os.path.join(path, cmtconfig)
+            siteroot = os.path.join(path, _release) # E.g. /cvmfs/atlas.cern.ch/repo/sw/software/AthSimulationBase/1.0.3
+        else:
+            if release == "":
+                tolog("!!WARNING!!4545!! Found no slash in homePackage and release is not set - have to guess siteroot")
+                if os.path.exists(os.path.join(swbase, _project)):
+                    siteroot = os.path.join(swbase, _project)
+                    if os.path.exists(os.path.join(siteroot, cmtconfig)):
+                        siteroot = os.path.join(siteroot, cmtconfig)
+                    else:
+                        siteroot = os.path.join(swbase, _project)
+                else:
+                    siteroot = os.path.join(swbase, cmtconfig)
+            else:
+                tolog("!!WARNING!!4545!! Found no slash in homePackage - have to guess siteroot")
+                # E.g. /cvmfs/atlas.cern.ch/repo/sw/software/i686-slc5-gcc43-opt/17.2.11
+                siteroot = os.path.join(swbase, cmtconfig)
+                siteroot = os.path.join(siteroot, release)
+
+        return siteroot
 
     def getProperASetup(self, swbase, atlasRelease, homePackage, cmtconfig, tailSemiColon=False, source=True, cacheVer=None, cacheDir=None):
         """ return a proper asetup.sh command """
-        
+
         # handle sites using builds area in a special way
         if swbase[-len('builds'):] == 'builds' or verifyReleaseString(atlasRelease) == "NULL":
             path = swbase
         else:
-            if os.path.exists(os.path.join(swbase, cmtconfig)):
-                if os.path.exists(os.path.join(os.path.join(swbase, cmtconfig), atlasRelease)):
-                    path = os.path.join(os.path.join(swbase, cmtconfig), atlasRelease)
+            # Check for special release (such as AthSimulationBase/1.0.3)
+            done = False
+            if homePackage.startswith('AthSimulation'):
+                path = self.getSiterootWithHomepackage(swbase, homePackage, cmtconfig, "") # do not send the release in this case
+                if os.path.exists(path):
+                    tolog("Verified siteroot path: %s" % (path))
+                    done = True
+                else:
+                    tolog("!!WARNING!!4545!! Siteroot path does not exist: %s" % (path))
+
+            # Normal setup
+            if not done:
+                if os.path.exists(os.path.join(swbase, cmtconfig)):
+                    if os.path.exists(os.path.join(os.path.join(swbase, cmtconfig), atlasRelease)):
+                        path = os.path.join(os.path.join(swbase, cmtconfig), atlasRelease)
+                    else:
+                        path = os.path.join(swbase, atlasRelease)
                 else:
                     path = os.path.join(swbase, atlasRelease)
-            else:
-                path = os.path.join(swbase, atlasRelease)
 
         # need to tell asetup where the compiler is in the US (location of special config file)
         _path = "%s/AtlasSite/AtlasSiteSetup" % (path)
@@ -2073,6 +2322,11 @@ class ATLASExperiment(Experiment):
             options = cacheVer + ",notest"
         if cacheDir and cacheDir != "":
             options += ",%s" % (cacheDir)
+
+        # special case for Ath* releases
+        if homePackage.startswith('AthSimulation'):
+            _project, _release = self.getSplitHomePackage(homePackage)
+            options = options.replace("notest", "%s,notest" % (_project))
 
         # nightlies setup?
         if "rel_" in homePackage:
@@ -2119,11 +2373,9 @@ class ATLASExperiment(Experiment):
             cmd = ""
 
         # HLT on AFS
-        if ("AtlasP1HLT" in homePackage or "AtlasHLT" in homePackage):
+        if "AtlasP1HLT" in homePackage or "AtlasHLT" in homePackage:
             try:
-                h = homePackage.split("/") # ['AtlasP1HLT', '18.1.0.1']
-                project = h[0]
-                patch = h[1]
+                project, patch = self.getSplitHomePackage(homePackage) # ('AtlasP1HLT', '18.1.0.1')
             except Exception, e:
                 tolog("!!WARNING!!1234!! Could not extract project and patch from %s" % (homePackage))
             else:
@@ -2220,17 +2472,12 @@ class ATLASExperiment(Experiment):
 
         # Set the python version used by the pilot
         self.setPilotPythonVersion()
-        
+
         if ('HPC_' in readpar("catchall")) or ('ORNL_Titan_install' in readpar("nickname")):
             status = True
         else:
-            # Test the LFC module
-            status = self.testImportLFCModule()
-
             # Test CVMFS
-            if status:
-                status = self.testCVMFS()
-        
+            status = self.testCVMFS()
         return status
 
     def checkSpecialEnvVars(self, sitename):
@@ -2297,12 +2544,12 @@ class ATLASExperiment(Experiment):
     def getMetadataForRegistration(self, guid):
         """ Return metadata (not known yet) for LFC registration """
 
-        # Use the GUID as identifier (the string "<GUID>-surltobeset" will later be replaced with the SURL)        
-        return '    <metadata att_name="surl" att_value="%s-surltobeset"/>\n' % (guid) 
+        # Use the GUID as identifier (the string "<GUID>-surltobeset" will later be replaced with the SURL)
+        return '    <metadata att_name="surl" att_value="%s-surltobeset"/>\n' % (guid)
 
     def getAttrForRegistration(self):
         """ Return the attribute of the metadata XML to be updated with surl value """
-        
+
         return 'surl'
 
     def getFileCatalog(self):
@@ -2312,28 +2559,6 @@ class ATLASExperiment(Experiment):
         # Return a dummy default to allow the existing host loop to remain in Mover
 
         fileCatalog = "<rucio default>"
-#        fileCatalog = ""
-#        try:
-#            ddm = readpar('ddm')
-#            # note that ddm can contain a comma separated list; if it does, get the first value
-#            if "," in ddm:
-#                ddm = ddm.split(',')[0]
-#            # Try to get the default file catalog from Rucio
-#            from dq2.info import TiersOfATLAS
-#            fileCatalog = TiersOfATLAS.getLocalCatalog(ddm)
-#        except:
-#            tolog("!!WARNING!!3333!! Failed to import TiersOfATLAS from dq2.info")
-#
-#        # This should not be necessary post-LFC
-#        if fileCatalog == "":
-#            tolog("Did not get a file catalog from dq2.info. Trying to construct one from lfchost")
-#            lfchost = readpar('lfchost')
-#            if not "lfc://" in lfchost:
-#                lfchost = "lfc://" + lfchost
-#            fileCatalog = lfchost + ":/grid/atlas"
-#
-#            # e.g. 'lfc://prod-lfc-atlas.cern.ch:/grid/atlas'
-
         tolog("Using file catalog: %s" % (fileCatalog))
 
         return fileCatalog
@@ -2342,21 +2567,6 @@ class ATLASExperiment(Experiment):
         """ Return a list of file catalog hosts """
 
         file_catalog_hosts = []
-
-#        # Get the catalogTopology dictionary
-#        try:
-#            from dq2.info import TiersOfATLAS
-#            catalogsTopology_dict = TiersOfATLAS.ToACache.catalogsTopology
-#
-#            # Extract all the LFC hosts from the catalogTopology dictionary
-#            file_catalog_hosts = catalogsTopology_dict.keys()
-#            tolog("catalogsTopology=%s" % str(file_catalog_hosts))
-#        except:
-#            import traceback
-#            tolog("!!WARNING!!3334!! Exception caught in Mover: %s" % str(traceback.format_exc()))
-#            tolog("!!WARNING!!1212!! catalogsTopology lookup failed")
-#        else:
-#            tolog("Extracted file catalog hosts: %s" % (file_catalog_hosts))
 
         return file_catalog_hosts
 
@@ -2370,7 +2580,7 @@ class ATLASExperiment(Experiment):
         #   appdir = application/software/release directory (e.g. /cvmfs/atlas.cern.ch/repo/sw)
         # Return:
         #   error code (0 for success)
-        
+
         ec = 0
 
         if not "|" in appdir and not "^" in appdir: # as can be the case at CERN
@@ -2538,6 +2748,8 @@ class ATLASExperiment(Experiment):
             transferLogToObjectstore = True
         if 'HPC_HPC' in readpar('catchall'):
             transferLogToObjectstore = True
+        if 'HPC_HPCARC' in readpar('catchall'):
+            transferLogToObjectstore = False
 
         return transferLogToObjectstore
 
@@ -2778,9 +2990,12 @@ class ATLASExperiment(Experiment):
         if limit == None:
             limit = 48
 
+        tolog("envsetup=%s"%(envsetup))
         from SiteMover import SiteMover
         if envsetup == "":
             envsetup = SiteMover.getEnvsetup()
+        tolog("envsetup=%s"%(envsetup))
+        envsetup = envsetup.strip()
 
         # add setup for arcproxy if it exists
         arcproxy_setup = "%s/atlas.cern.ch/repo/sw/arc/client/latest/slc6/x86_64/setup.sh" % (self.getCVMFSPath())
@@ -2800,6 +3015,8 @@ class ATLASExperiment(Experiment):
 
             _envsetup += ". %s;" % (arcproxy_setup)
 
+        tolog("envsetup=%s"%(envsetup))
+
         # first try to use arcproxy since voms-proxy-info is not working properly on SL6 (memory issues on queues with limited memory)
         # cmd = "%sarcproxy -I |grep 'AC:'|awk '{sum=$5*3600+$7*60+$9; print sum}'" % (envsetup)
         cmd = "%sarcproxy -i vomsACvalidityLeft" % (_envsetup)
@@ -2818,6 +3035,9 @@ class ATLASExperiment(Experiment):
                 tolog("Will try voms-proxy-info instead")
 
         # -valid HH:MM is broken
+        if "; ;" in envsetup:
+            envsetup = envsetup.replace('; ;', ';')
+            tolog("Removed a double ; from envsetup")
         cmd = "%svoms-proxy-info -actimeleft --file $X509_USER_PROXY" % (envsetup)
         tolog("Executing command: %s" % (cmd))
         exitcode, output = commands.getstatusoutput(cmd)
@@ -2938,17 +3158,29 @@ class ATLASExperiment(Experiment):
 
         # Handle nightlies correctly, since these releases will have different initial paths
         path = "%s/atlas.cern.ch/repo" % (self.getCVMFSPath())
-        #if swbase:
-        #    path = getInitialDirs(swbase, 3) # path = "/cvmfs/atlas-nightlies.cern.ch/repo"
-        #    # correct for a possible change of the root directory (/cvmfs)
-        #    path = path.replace("/cvmfs", self.getCVMFSPath())
-        #else:
-        #    path = "%s/atlas.cern.ch/repo" % (self.getCVMFSPath())
-        cmd = "export ATLAS_LOCAL_ROOT_BASE=%s/ATLASLocalRootBase;" % (path)
-        cmd += "source ${ATLAS_LOCAL_ROOT_BASE}/user/atlasLocalSetup.sh --quiet;"
-        cmd += "source $AtlasSetup/scripts/asetup.sh"
+        if os.path.exists(path):
+            # Handle nightlies correctly, since these releases will have different initial paths
+            path = "%s/atlas.cern.ch/repo" % (self.getCVMFSPath())
+            #if swbase:
+            #    path = getInitialDirs(swbase, 3) # path = "/cvmfs/atlas-nightlies.cern.ch/repo"
+            #    # correct for a possible change of the root directory (/cvmfs)
+            #    path = path.replace("/cvmfs", self.getCVMFSPath())
+            #else:
+            #    path = "%s/atlas.cern.ch/repo" % (self.getCVMFSPath())
+            cmd = "export ATLAS_LOCAL_ROOT_BASE=%s/ATLASLocalRootBase;" % (path)
+            cmd += "source ${ATLAS_LOCAL_ROOT_BASE}/user/atlasLocalSetup.sh --quiet;"
+            cmd += "source $AtlasSetup/scripts/asetup.sh"
 
-        return cmd
+            return cmd
+        else:
+            appdir = readpar('appdir')
+            if appdir == "":
+                if os.environ.has_key('VO_ATLAS_SW_DIR'):
+                    appdir = os.environ['VO_ATLAS_SW_DIR']
+            if appdir != "":
+                cmd = "source %s/scripts/asetup.sh" % appdir
+                return cmd
+        return ''
 
     def verifySetupCommand(self, _setup_str):
         """ Make sure the setup command exists """
@@ -3003,9 +3235,9 @@ class ATLASExperiment(Experiment):
 
     # Optional
     def useTracingService(self):
-        """ Use the DQ2 Tracing Service """
-        # A service provided by the DQ2 system that allows for file transfer tracking; all file transfers
-        # are reported by the pilot to the DQ2 Tracing Service if this method returns True
+        """ Use the Rucio Tracing Service """
+        # A service provided by the Rucio system that allows for file transfer tracking; all file transfers
+        # are reported by the pilot to the Rucio Tracing Service if this method returns True
 
         return True
 
@@ -3059,15 +3291,30 @@ class ATLASExperiment(Experiment):
 
     # Optional
     def shouldExecuteUtility(self):
-        """ Determine where a memory utility monitor should be executed """ 
+        """ Determine where a memory utility monitor should be executed """
 
         # The RunJob class has the possibility to execute a memory utility monitor that can track the memory usage
         # of the payload. The monitor is executed if this method returns True. The monitor is expected to produce
         # a summary JSON file whose name is defined by the getMemoryMonitorJSONFilename() method. The contents of
         # this file (ie. the full JSON dictionary) will be added to the jobMetrics at the end of the job (see
         # PandaServerClient class).
+        #
+        # Example of summary JSON file:
+        #   {"Max":{"maxVMEM":40058624,"maxPSS":10340177,"maxRSS":16342012,"maxSwap":16235568},
+        #    "Avg":{"avgVMEM":19384236,"avgPSS":5023500,"avgRSS":6501489,"avgSwap":5964997}}
+        #
+        # While running, the MemoryMonitor also produces a regularly updated text file with the following format: (tab separated)
+        #   Time          VMEM        PSS        RSS        Swap         (first line in file)
+        #   1447960494    16099644    3971809    6578312    1978060
 
         return True
+
+    # Optional
+    def getUtilityOutputFilename(self):
+        """ Return the filename of the memory monitor text output file """
+
+        # For explanation, see shouldExecuteUtility()
+        return "memory_monitor_output.txt"
 
     # Optional
     def getUtilityJSONFilename(self):
@@ -3075,6 +3322,166 @@ class ATLASExperiment(Experiment):
 
         # For explanation, see shouldExecuteUtility()
         return "memory_monitor_summary.json"
+
+    def getUtilityInfoPath(self, workdir, pilot_initdir, allowTxtFile=False):
+        """ Find the proper path to the utility info file """
+        # Priority order:
+        #   1. JSON summary file from workdir
+        #   2. JSON summary file from pilot initdir
+        #   3. Text output file from workdir (if allowTxtFile is True)
+
+        path = os.path.join(workdir, self.getUtilityJSONFilename())
+        init_path = os.path.join(pilot_initdir, self.getUtilityJSONFilename())
+        if not os.path.exists(path):
+            tolog("File does not exist: %s" % (path))
+            if os.path.exists(init_path):
+                path = init_path
+            else:
+                tolog("File does not exist either: %s" % (init_path))
+                path = ""
+
+            if path == "" and allowTxtFile:
+                path = os.path.join(workdir, self.getUtilityOutputFilename())
+                if not os.path.exists(path):
+                    tolog("File does not exist either: %s" % (path))
+
+        return path
+
+    # Optional
+    def getUtilityInfo(self, workdir, pilot_initdir, allowTxtFile=False):
+        """ Add the utility info to the node structure if available """
+
+        node = {}
+
+        # Get the values from the memory monitor file
+        summary_dictionary = self.getMemoryValues(workdir, pilot_initdir)
+
+        # Fill the node dictionary
+        if summary_dictionary and summary_dictionary != {}:
+            try:
+                node['maxRSS'] = summary_dictionary['Max']['maxRSS']
+                node['maxVMEM'] = summary_dictionary['Max']['maxVMEM']
+                node['maxSWAP'] = summary_dictionary['Max']['maxSwap']
+                node['maxPSS'] = summary_dictionary['Max']['maxPSS']
+                node['avgRSS'] = summary_dictionary['Avg']['avgRSS']
+                node['avgVMEM'] = summary_dictionary['Avg']['avgVMEM']
+                node['avgSWAP'] = summary_dictionary['Avg']['avgSwap']
+                node['avgPSS'] = summary_dictionary['Avg']['avgPSS']
+            except Exception, e:
+                tolog("!!WARNING!!54541! Exception caught while parsing memory monitor file: %s" % (e))
+                tolog("!!WARNING!!5455!! Will add -1 values for the memory info")
+                node['maxRSS'] = -1
+                node['maxVMEM'] = -1
+                node['maxSWAP'] = -1
+                node['maxPSS'] = -1
+                node['avgRSS'] = -1
+                node['avgVMEM'] = -1
+                node['avgSWAP'] = -1
+                node['avgPSS'] = -1
+            else:
+                tolog("Extracted info from memory monitor")
+        else:
+            tolog("Memory summary dictionary not yet available")
+
+        return node
+
+    def getMaxUtilityValue(self, value, maxValue, totalValue):
+        """ Return the max and total value (used by memory monitoring) """
+        # Return an error code, 1, in case of value error
+
+        ec = 0
+        try:
+            value_int = int(value)
+        except Exception, e:
+            tolog("!!WARNING!!4543!! Exception caught: %s" % (e))
+            ec = 1
+        else:
+            totalValue += value_int
+            if value_int > maxValue:
+                maxValue = value_int
+
+        return ec, maxValue, totalValue
+
+    def getMemoryValues(self, workdir, pilot_initdir):
+        """ Find the values in the utility output file """
+
+        # In case the summary JSON file has not yet been produced, create a summary dictionary with the same format
+        # using the output text file (produced by the memory monitor and which is updated once per minute)
+        #
+        # FORMAT:
+        #   {"Max":{"maxVMEM":40058624,"maxPSS":10340177,"maxRSS":16342012,"maxSwap":16235568},
+        #    "Avg":{"avgVMEM":19384236,"avgPSS":5023500,"avgRSS":6501489,"avgSwap":5964997}}
+
+        maxVMEM = -1
+        maxRSS = -1
+        maxPSS = -1
+        maxSwap = -1
+        avgVMEM = 0
+        avgRSS = 0
+        avgPSS = 0
+        avgSwap = 0
+        totalVMEM = 0
+        totalRSS = 0
+        totalPSS = 0
+        totalSwap = 0
+        N = 0
+        summary_dictionary = {}
+
+        # Get the path to the proper memory info file (priority ordered)
+        path = self.getUtilityInfoPath(workdir, pilot_initdir, allowTxtFile=True)
+        if os.path.exists(path):
+
+            tolog("Using path: %s" % (path))
+
+            # Does a JSON summary file exist? If so, there's no need to calculate maximums and averages in the pilot
+            if path.lower().endswith('json'):
+                # Read the dictionary from the JSON file
+                summary_dictionary = getJSONDictionary(path)
+            else:
+                # Loop over the output file, line by line, and look for the maximum PSS value
+                first = True
+                with open(path) as f:
+                    for line in f:
+                        # Skip the first line
+                        if first:
+                            first = False
+                            continue
+                        line = convert_unicode_string(line)
+                        if line != "":
+                            try:
+                                Time, VMEM, PSS, RSS, Swap = line.split("\t")
+                            except Exception, e:
+                                tolog("!!WARNING!!4542!! Unexpected format of utility output: %s (expected format: Time, VMEM, PSS, RSS, Swap)" % (line))
+                            else:
+                                # Convert to int
+                                ec1, maxVMEM, totalVMEM = self.getMaxUtilityValue(VMEM, maxVMEM, totalVMEM) 
+                                ec2, maxPSS, totalPSS = self.getMaxUtilityValue(PSS, maxPSS, totalPSS) 
+                                ec3, maxRSS, totalRSS = self.getMaxUtilityValue(RSS, maxRSS, totalRSS) 
+                                ec4, maxSwap, totalSwap = self.getMaxUtilityValue(Swap, maxSwap, totalSwap) 
+                                if ec1 or ec2 or ec3 or ec4:
+                                    tolog("Will skip this row of numbers due to value exception: %s" % (line))
+                                else:
+                                    N += 1
+                    # Calculate averages and store all values
+                    summary_dictionary = { "Max": {}, "Avg": {} }
+                    summary_dictionary["Max"] = { "maxVMEM":maxVMEM, "maxPSS":maxPSS, "maxRSS":maxRSS, "maxSwap":maxSwap }
+                    if N > 0:
+                        avgVMEM = int(float(totalVMEM)/float(N))
+                        avgPSS = int(float(totalPSS)/float(N))
+                        avgRSS = int(float(totalRSS)/float(N))
+                        avgSwap = int(float(totalSwap)/float(N))
+                    summary_dictionary["Avg"] = { "avgVMEM":avgVMEM, "avgPSS":avgPSS, "avgRSS":avgRSS, "avgSwap":avgSwap }
+                    tolog("summary_dictionary=%s"%str(summary_dictionary))
+                f.close()
+        else:
+            if path == "":
+                tolog("!!WARNING!!4541!! Filename not set for utility output")
+            else:
+                # Normally this means that the memory output file has not been produced yet
+                pass
+                # tolog("File does not exist: %s" % (path))
+
+        return summary_dictionary
 
     # Optional
     def getUtilityCommand(self, **argdict):
@@ -3091,9 +3498,9 @@ class ATLASExperiment(Experiment):
         homePackage = argdict.get('homePackage', '')
         cmtconfig = argdict.get('cmtconfig', '')
         summary = self.getUtilityJSONFilename()
-
+        workdir = argdict.get('workdir', '.')
         interval = 60
-        
+
         default_release = "20.1.5"
         default_patch_release = "20.1.5.2" #"20.1.4.1"
         default_cmtconfig = "x86_64-slc6-gcc48-opt"
@@ -3111,11 +3518,15 @@ class ATLASExperiment(Experiment):
         cacheVer = homePackage.split('/')[-1]
 
         # Could anything be extracted?
-        if homePackage == cacheVer: # (no)
+        #if homePackage == cacheVer: # (no)
+        if isAGreaterOrEqualToB(default_release, release) or default_release == release: # or NG
             # This means there is no patched release available, ie. we need to use the fallback
             useDefault = True
+            tolog("%s >= %s" % (default_release, release))
         else:
             useDefault = False
+            tolog("%s <= %s" % (default_release, release))
+        useDefault = True
 
         if useDefault:
             tolog("Will use default (fallback) setup for MemoryMonitor since patched release number is needed for the setup, and none is available")
@@ -3139,14 +3550,15 @@ class ATLASExperiment(Experiment):
                     cmd = standard_setup
 
         # Now add the MemoryMonitor command
-        cmd += "; MemoryMonitor --pid %d --filename %s --json-summary %s --interval %d" % (pid, "memory_monitor_output.txt", summary, interval)
+        cmd += "; MemoryMonitor --pid %d --filename %s --json-summary %s --interval %d" % (pid, self.getUtilityOutputFilename(), summary, interval)
+        cmd = "cd " + workdir + ";" + cmd
 
         return cmd
 
     # Optional
     def getGUIDSourceFilename(self):
         """ Return the filename of the file containing the GUIDs for the output files """
-        
+
         # In the case of ATLAS, Athena produces an XML file containing the GUIDs of the output files. The name of this
         # file is PoolFileCatalog.xml. If this method returns an empty string (ie the default), the GUID generation will
         # be done by the pilot in RunJobUtilities::getOutFilesGuids()
@@ -3170,4 +3582,3 @@ if __name__ == "__main__":
 
     #    ts = TracingService()
     #    ts.send
-        

@@ -188,15 +188,15 @@ class NordugridATLASExperiment(ATLASExperiment):
             tolog("!!FAILED!!3000!! %s" % (pilotErrorDiag))
             return error.ERR_SETUPFAILURE, pilotErrorDiag, ""
 
+        # correct for multi-core if necessary (especially important in case coreCount=1 to limit parallel make)
+        cmd = self.addMAKEFLAGS(job.coreCount, "") + cmd
+
         return 0, pilotErrorDiag, cmd
 
     def getWarning(self):
         """ Return any warning message passed to __warning """
 
         return self.__warning
-
-    def testImportLFCModule(self):
-	return True
 
     def getRelease(self, release):
         """ Return a list of the software release id's """

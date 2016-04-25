@@ -27,12 +27,16 @@ class objectstoreSiteMover(SiteMover.SiteMover):
     copyCommand = "objectstore"
     checksum_command = "adler32"
 
+    def __init__(self, setup_path='', useTimerCommand=True, *args, **kwrds):
+        self._setup = setup_path
+        self._useTimerCommand = useTimerCommand
+
     def get_data(self, gpfn, lfn, path, fsize=0, fchecksum=0, guid=0, **pdict):
         if gpfn.startswith("root:"):
             sitemover = xrootdObjectstoreSiteMover(self.getSetup())
             return sitemover.get_data(gpfn, lfn, path, fsize, fchecksum, guid, **pdict)
         if gpfn.startswith("s3:"):
-            sitemover = S3ObjectstoreSiteMover(self.getSetup())
+            sitemover = S3ObjectstoreSiteMover(self.getSetup(), self._useTimerCommand)
             return sitemover.get_data(gpfn, lfn, path, fsize, fchecksum, guid, **pdict)
         return -1, "No objectstore sitemover found for this scheme(%s)" % gpfn
 
@@ -49,7 +53,7 @@ class objectstoreSiteMover(SiteMover.SiteMover):
             sitemover = xrootdObjectstoreSiteMover(self.getSetup())
             return sitemover. put_data(source, destination, fsize, fchecksum, **pdict)
         if surl.startswith("s3:"):
-            sitemover = S3ObjectstoreSiteMover(self.getSetup())
+            sitemover = S3ObjectstoreSiteMover(self.getSetup(), self._useTimerCommand)
             return sitemover. put_data(source, surl, fsize, fchecksum, **pdict)
         return -1, "No objectstore sitemover found for this scheme(%s)" % destination, destination, fsize, fchecksum, config_sm.ARCH_DEFAULT
 
@@ -93,11 +97,11 @@ if __name__ == '__main__':
     lfn = "NTUP_PHOTON.01255150._000001.root.1"
     localSize = None
     localChecksum = None
-    print f.put_data(source, dest, fsize=localSize, fchecksum=localChecksum, prodSourceLabel='ptest', experiment='ATLAS', report =report, lfn=lfn, guid='aa8ee1ae-54a5-468b-a0a0-41cf17477ffc')
+    print f.put_data(source, dest, fsize=localSize, fchecksum=localChecksum, prodSourceLabel='ptest', experiment='ATLAS', report =report, lfn=lfn, guid='aa8ee1ae-54a5-468b-a0a0-41cf17477ffc', jobId=2730987843, jobsetID=2728044425,pandaProxySecretKey='deb05b9fb5034a45b80c03bd671359c9')
 
     gpfn = "s3://ceph003.usatlas.bnl.gov:8443//wguan_bucket/dir1/dir2/NTUP_PHOTON.01255150._000001.root.1"
     lfn = "NTUP_PHOTON.01255150._000001.root.1"
     tmpDir = "/tmp/"
     localSize = None
     localChecksum = None
-    print f.get_data(gpfn, lfn, tmpDir, fsize=localSize, fchecksum=localChecksum, experiment='ATLAS', report =report, guid='aa8ee1ae-54a5-468b-a0a0-41cf17477ffc')
+    print f.get_data(gpfn, lfn, tmpDir, fsize=localSize, fchecksum=localChecksum, experiment='ATLAS', report =report, guid='aa8ee1ae-54a5-468b-a0a0-41cf17477ffc', jobId=2730987843, jobsetID=2728044425,pandaProxySecretKey='deb05b9fb5034a45b80c03bd671359c9')
