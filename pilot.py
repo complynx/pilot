@@ -8,7 +8,7 @@ import logging.config
 # main
 if __name__ == "__main__":
     logging.config.fileConfig("loggers.ini")
-    logging.getLogger("pilot")
-    logging.info("test")
+    log = logging.getLogger("pilot")
+    log.info("test")
 
 
