@@ -101,13 +101,21 @@ def tolog(msg, tofile=True):
 
     MAXLENGTH = 12
     # getting the name of the module that is invoking tolog() and adjust the length
+    function_name="[no function]"
+    line=-1
+    try:
+        (frame, filename, line,
+        function_name, lines, index) = inspect.getouterframes(inspect.currentframe())[1]
+    except Exception, e:
+        print "Exception caught by tolog():", e
     try:
         module_name = os.path.basename(inspect.stack()[1][1])
     except Exception, e:
         module_name = "unknown"
         print "Exception caught by tolog():", e
     module_name_cut = module_name[0:MAXLENGTH].ljust(MAXLENGTH)
-    msg = "%s| %s" % (module_name_cut, msg)
+    function_name = function_name[0:MAXLENGTH].ljust(MAXLENGTH)
+    msg = "%s|%s:%4d| %s" % (module_name_cut,function_name,line, msg)
 
     t = timeStampUTC()
     if tofile:
