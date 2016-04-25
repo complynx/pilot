@@ -5,10 +5,10 @@ from commands import getstatusoutput, getoutput
 from shutil import copy2
 
 from PilotErrors import PilotErrors
-from pUtil import tolog, readpar, timeStamp, getBatchSystemJobID, getCPUmodel, PFCxml, updateMetadata, addSkippedToPFC, makeHTTPUpdate, tailPilotErrorDiag, isLogfileCopied, updateJobState, updateXMLWithSURLs, getMetadata, toPandaLogger, getSiteInformation, getExperiment, readStringFromFile
+from pUtil import tolog, readpar, timeStamp, getBatchSystemJobID, getCPUmodel, PFCxml, updateMetadata, addSkippedToPFC, makeHTTPUpdate, tailPilotErrorDiag, isLogfileCopied, updateJobState, updateXMLWithSURLs, getMetadata, toPandaLogger, getSiteInformation, getExperiment, readStringFromFile, merge_dictionaries
 from JobState import JobState
-from FileState import FileState
-from FileHandling import getJSONDictionary, getOSTransferDictionaryFilename, getOSNames, getHighestPriorityError
+from FileStateClient import getFilesOfState
+from FileHandling import getJSONDictionary, getOSTransferDictionaryFilename, getOSTransferDictionary, getHighestPriorityError
 
 class PandaServerClient:
     """
@@ -98,7 +98,7 @@ class PandaServerClient:
 
         return jobMetric
 
-    def getJobMetrics(self, job, workerNode):
+    def getJobMetrics(self, job, site, workerNode):
         """ Return a properly formatted job metrics string """
 
         # style: Number of events read | Number of events written | vmPeak maximum | vmPeak average | RSS average | JEM activation
@@ -115,7 +115,7 @@ class PandaServerClient:
                     job.coreCount = int(os.environ['ATHENA_PROC_NUMBER'])
                 except Exception, e:
                     tolog("ATHENA_PROC_NUMBER is not properly set: %s (will use existing job.coreCount value)" % (e))
-                    
+
             coreCount = job.coreCount
         else:
             try:
@@ -153,6 +153,15 @@ class PandaServerClient:
             _jobMetrics += " filesNormalStageOut=%d" % (job.filesNormalStageOut)
             tolog("Could have reported: %s" % (_jobMetrics))
 
+            # Report which output files were moved to an alternative SE
+            filenames = getFilesOfState(site.workdir, job.jobId, state="alt_transferred")
+            if filenames != "":
+                jobMetrics += self.jobMetric(key="altTransferred", value=filenames)
+
+        # report on which OS bucket the log was written to, if any
+        if job.logBucketID != -1:
+            jobMetrics += self.jobMetric(key="logBucketID", value=job.logBucketID)
+
         # only add the JEM bit if explicitly set to YES, otherwise assumed to be NO
         if job.JEM == "YES":
             jobMetrics += self.jobMetric(key="JEM", value=1)
@@ -166,11 +175,11 @@ class PandaServerClient:
         _jobMetrics = ""
 
         # report any OS transfers
-        message = self.getOSJobMetrics()
-        if message != "":
-            _jobMetrics = self.jobMetric(key="OS", value=message)
-            tolog("Could have added: %s to job metrics" % (_jobMetrics))
-            
+        #message = self.getOSJobMetrics()
+        #if message != "":
+        #    _jobMetrics = self.jobMetric(key="OS", value=message)
+        #    tolog("Could have added: %s to job metrics" % (_jobMetrics))
+
         # correct for potential initial and trailing space
         jobMetrics = jobMetrics.lstrip().rstrip()
 
@@ -207,7 +216,7 @@ class PandaServerClient:
         path = os.path.join(self.__pilot_initdir, filename)
         if os.path.exists(path):
             # Which OS's were used?
-            os_names_dictionary = getOSNames(path)
+            os_names_dictionary = getOSTransferDictionary(path)
             if os_names_dictionary != {}:
                 message = ""
 
@@ -234,97 +243,6 @@ class PandaServerClient:
             tolog("OS transfer dictionary does not exist, will not report OS transfers in jobMetrics (%s)" % (path))
 
         return message
-
-    def getUtilityInfo(self, node, experiment, workdir):
-        """ Add the utility info to the node structure if available """
-
-        # Get the experiment object and check if the special utility (e.g. a memory monitor) was used
-        thisExperiment = getExperiment(experiment)
-        if thisExperiment.shouldExecuteUtility():
-
-            # Try to get the memory monitor info from the workdir first
-            path = os.path.join(workdir, thisExperiment.getUtilityJSONFilename())
-            init_path = os.path.join(self.__pilot_initdir, thisExperiment.getUtilityJSONFilename())
-            primary_location = False
-            if not os.path.exists(path):
-                tolog("File does not exist: %s" % (path))
-                if os.path.exists(init_path):
-                    path = init_path
-                else:
-                    tolog("File does not exist either: %s" % (path))
-                    path = ""
-                primary_location = False
-            else:
-                primary_location = True
-
-            if path != "":
-                tolog("Reading memory monitoring info from: %s" % (path))
-
-                # If the file is the primary one (ie the one in the workdir and not the initdir, then also check the modification time)
-                read_from_file = True
-                if primary_location:
-                    # Get the modification time
-                    mod_time = None
-                    max_time = 120
-                    try:
-                        file_modification_time = os.path.getmtime(path)
-                        current_time = int(time())
-                        mod_time = current_time - file_modification_time
-                        tolog("File %s was modified %d seconds ago" % (mod_time))
-                    except:
-                        tolog("!!WARNING!!2323!! Could not read the modification time of %s" % (path))
-                        tolog("!!WARNING!!2324!! Will add -1 values for the memory info")
-                        node['maxRSS'] = -1
-                        node['maxVMEM'] = -1
-                        node['maxSWAP'] = -1
-                        node['maxPSS'] = -1
-                        node['avgRSS'] = -1
-                        node['avgVMEM'] = -1
-                        node['avgSWAP'] = -1
-                        node['avgPSS'] = -1
-                        read_from_file = False
-                    else:
-                        if mod_time > max_time:
-                            tolog("!!WARNING!!2325!! File %s was modified over %d s ago, will add -1 values for the memory info" % (path, max_time))
-                            node['maxRSS'] = -1
-                            node['maxVMEM'] = -1
-                            node['maxSWAP'] = -1
-                            node['maxPSS'] = -1
-                            node['avgRSS'] = -1
-                            node['avgVMEM'] = -1
-                            node['avgSWAP'] = -1
-                            node['avgPSS'] = -1
-                            read_from_file = False
-
-                if read_from_file:
-                    # Get the dictionary
-                    d = getJSONDictionary(path)
-                    if d and d != {}:
-                        try:
-                            # Move to experiment class?
-                            node['maxRSS'] = d['Max']['maxRSS']
-                            node['maxVMEM'] = d['Max']['maxVMEM']
-                            node['maxSWAP'] = d['Max']['maxSwap']
-                            node['maxPSS'] = d['Max']['maxPSS']
-                            node['avgRSS'] = d['Avg']['avgRSS']
-                            node['avgVMEM'] = d['Avg']['avgVMEM']
-                            node['avgSWAP'] = d['Avg']['avgSwap']
-                            node['avgPSS'] = d['Avg']['avgPSS']
-                        except Exception, e:
-                            tolog("!!WARNING!!54541! Exception caught while parsing memory monitor JSON: %s" % (e))
-                        else:
-                            tolog("Extracted info from memory monitor JSON")
-
-            # Done with the memory monitor for this job (if the file is read from the pilots' init dir), remove the file in case there are other jobs to be run
-            if os.path.exists(init_path):
-                try:
-                    os.system("rm -rf %s" % (init_path))
-                except Exception, e:
-                    tolog("!!WARNING!!4343!! Failed to remove %s: %s" % (init_path), e)
-                else:
-                    tolog("Removed %s" % (init_path))
-
-        return node
 
     def getNodeStructure(self, job, site, workerNode, spaceReport=False, log=None):
         """ define the node structure expected by the server """
@@ -354,7 +272,7 @@ class PandaServerClient:
                 tolog("Batch system type was not identified (will not be reported)")
                 node['pilotID'] = "%s|%s|%s" % (self.__pilotId, self.__pilot_version_tag, self.__pilot_version)
                 tolog("Will send pilotID: %s" % (node['pilotID']))
-            tolog("pilotId: %s" % str(self.__pilotId)) 
+            tolog("pilotId: %s" % str(self.__pilotId))
         if log and (job.result[0] == 'failed' or job.result[0] == 'holding' or "outbound connections" in log):
             node['pilotLog'] = log
 
@@ -366,7 +284,7 @@ class PandaServerClient:
             node['startTime'] = startTime
 
         # build the jobMetrics
-        node['jobMetrics'] = self.getJobMetrics(job, workerNode)
+        node['jobMetrics'] = self.getJobMetrics(job, site, workerNode)
 
         # for hpc status
         if job.hpcStatus:
@@ -483,12 +401,11 @@ class PandaServerClient:
         else:
             node['cpuConsumptionUnit'] = getCPUmodel()
 
-        if spaceReport and site.dq2space != -1: # non-empty string and the space check function runs well
-            node['remainingSpace'] = site.dq2space
-            node['messageLevel'] = site.dq2spmsg
-
         # Add the utility info if it is available
-        node = self.getUtilityInfo(node, job.experiment, job.workdir)
+        thisExperiment = getExperiment(job.experiment)
+        if thisExperiment.shouldExecuteUtility():
+            utility_node = thisExperiment.getUtilityInfo(job.workdir, self.__pilot_initdir, allowTxtFile=True)
+            node = merge_dictionaries(node, utility_node)
 
         return node
 
@@ -509,7 +426,7 @@ class PandaServerClient:
             pass
         else:
             # only create and send log xml if the log was transferred
-            if job.result[0] == 'failed' and isLogfileCopied(workdir):
+            if job.result[0] == 'failed' and isLogfileCopied(workdir, job.jobId):
                 # generate the xml string for log file
                 # at this time the job.workdir might have been removed (because this function can be called
                 # after the removal of workdir is done), so we make a new dir
@@ -575,7 +492,7 @@ class PandaServerClient:
                                     tolog("Successfully copied NG log metadata file to pilot init dir: %s" % (self.__pilot_initdir))
 
                 else: # log file does not exist anymore
-                    if isLogfileCopied(workdir):
+                    if isLogfileCopied(workdir, job.jobId):
                         tolog("Log file has already been copied and removed")
                         if not os.environ.has_key('Nordugrid_pilot'):
                             # only send xml with log info if the log has been transferred
@@ -690,14 +607,14 @@ class PandaServerClient:
 
         from re import split
         return tuple(self.tryint(x) for x in split('([0-9]+)', s))
-                        
+
     def isAGreaterOrEqualToB(self, A, B):
         """ Is numbered string A > B? """
         # > a="1.2.3"
         # > b="2.2.2"
         # > e.isAGreaterThanB(a,b)
         # False
-        
+
         return self.splittedname(A) >= self.splittedname(B)
 
     def getPayloadMetadataFilename(self, workdir, jobId, altloc=""):
@@ -762,7 +679,7 @@ class PandaServerClient:
         xmlstr is set in postJobTask for finished jobs (all files). Failed jobs will only send xml for log (created in this function)
         jr = job recovery mode
         """
-    
+
         tolog("Updating job status in updatePandaServer(): PandaId=%s, result=%s, time=%s" % (job.getState()))
 
         # set any holding job to failed for sites that do not use job recovery (e.g. sites with LSF, that immediately
@@ -781,8 +698,6 @@ class PandaServerClient:
         if not self.__updateServer:
             tolog("(fake server update)")
             return 0, node
-
-        tolog("xmlstr = %s" % (xmlstr))
 
         # get the xml
         node['xml'] = self.getXML(job, site.sitename, site.workdir, xmlstr=xmlstr, jr=jr)
@@ -879,26 +794,23 @@ class PandaServerClient:
         except:
             eventService = False
 
-        if not eventService:
-            if os.path.exists(filenamePayloadMetadata) and final:
+        if os.path.exists(filenamePayloadMetadata) and final:
 
-                # get the metadata created by the payload
-                payloadXML = getMetadata(site.workdir, job.jobId, athena=True, altpath=filenamePayloadMetadata)
+            # get the metadata created by the payload
+            payloadXML = getMetadata(site.workdir, job.jobId, athena=True, altpath=filenamePayloadMetadata)
 
-                # add the metadata to the node
-                if payloadXML != "" and payloadXML != None:
-                    tolog("Adding payload metadata of size %d to node dictionary (\'metaData\' field):\n%s" % (len(payloadXML), payloadXML))
-                    node['metaData'] = payloadXML
-                else:
-                    pilotErrorDiag = "Empty Athena metadata in file: %s" % (filenamePayloadMetadata)
-                    payloadXMLProblem = True
+            # add the metadata to the node
+            if payloadXML != "" and payloadXML != None:
+                tolog("Adding payload metadata of size %d to node dictionary (\'metaData\' field):\n%s" % (len(payloadXML), payloadXML))
+                node['metaData'] = payloadXML
             else:
-                # athena XML should exist at the end of the job
-                if job.result[0] == 'finished' and 'Install' not in site.sitename and 'ANALY' not in site.sitename and 'DDM' not in site.sitename and 'test' not in site.sitename and job.prodSourceLabel != "install" and not eventService:
-                    pilotErrorDiag = "Metadata does not exist: %s" % (filenamePayloadMetadata)
-                    payloadXMLProblem = True
+                pilotErrorDiag = "Empty Athena metadata in file: %s" % (filenamePayloadMetadata)
+                payloadXMLProblem = True
         else:
-            tolog("Will not send payload metadata for event service job")
+            # athena XML should exist at the end of the job
+            if job.result[0] == 'finished' and 'Install' not in site.sitename and 'ANALY' not in site.sitename and 'DDM' not in site.sitename and 'test' not in site.sitename and job.prodSourceLabel != "install" and not eventService:
+                pilotErrorDiag = "Metadata does not exist: %s" % (filenamePayloadMetadata)
+                payloadXMLProblem = True
 
         # fail the job if there was a problem with the athena metadata
         # remove the comments below if a certain trf and release should be excluded from sending metadata
@@ -950,7 +862,7 @@ class PandaServerClient:
             node['xml'] = updateXMLWithSURLs(experiment, node['xml'], site.workdir, job.jobId, self.__jobrec)
 
             _xml = node['xml']
-            if not isLogfileCopied(site.workdir):
+            if not isLogfileCopied(site.workdir, job.jobId):
                 tolog("Pilot will not send xml about output files since log was not transferred")
                 node['xml'] = ""
 
@@ -1021,5 +933,13 @@ class PandaServerClient:
         if final and node.has_key('xml'):
             node['xml'] = _xml
 
-        return ecode, node # ecode=0 : update OK, otherwise something wrong
+        # if final update, now it's safe to remove any lingering memory output files from the init dir
+        if final:
+            try:
+                filename = os.path.join(self.__pilot_initdir, "memory_monitor*")
+                tolog("Will remove any lingering %s files from the init directory" % (filename))
+                os.system("rm -rf %s" % (filename))
+            except Exception, e:
+                tolog("!!WARNING!!4343!! Failed to remove %s: %s" % (filename), e)
 
+        return ecode, node # ecode=0 : update OK, otherwise something wrong

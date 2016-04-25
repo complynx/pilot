@@ -22,10 +22,6 @@ from PilotErrors import PilotErrors
 from pUtil import tolog, readpar, getSiteInformation, extractFilePaths, getExperiment
 from FileStateClient import updateFileState
 from SiteInformation import SiteInformation
-from FileHandling import getTracingReportFilename, writeJSON
-
-# placing the import lfc here breaks compilation on non-lcg sites
-# import lfc
 
 class xrdcpSiteMover(SiteMover.SiteMover):
     """ SiteMover that uses xrdcp for both get and put """
@@ -251,12 +247,13 @@ class xrdcpSiteMover(SiteMover.SiteMover):
         siteInformation = SiteInformation()
         directIn, transfer_mode = siteInformation.getDirectInAccessMode(prodDBlockToken, isRootFileName)
         if transfer_mode:
-            #updateFileState(lfn, workDir, jobId, mode="transfer_mode", state=transfer_mode, type="input")
             output["transfer_mode"] = transfer_mode
         if directIn:
             output["report"]["clientState"] = 'FOUND_ROOT'
             output["report"]['relativeStart'] = None
             output["report"]['transferStart'] = None
+
+            tolog("getStageInMode:() directIn=True")
 
             return PilotErrors.ERR_DIRECTIOFILE, output
 
@@ -855,13 +852,13 @@ class xrdcpSiteMover(SiteMover.SiteMover):
         useCT = pdict.get('usect', True)
         prodDBlockToken = pdict.get('access', '')
 
-        # get the DQ2 tracing report
+        # get the Rucio tracing report
         report = self.getStubTracingReport(pdict['report'], 'xrdcp', lfn, guid)
 
 
         status, output = self.getStageInMode(lfn, prodDBlockToken)
         if output["transfer_mode"]:
-            updateFileState(lfn, workDir, jobId, mode="transfer_mode", state=output["transfer_mode"], type="input")
+            updateFileState(lfn, workDir, jobId, mode="transfer_mode", state=output["transfer_mode"], ftype="input")
         if status !=0:
             self.prepareReport(output["report"], report)
             return status, output["errorLog"]
@@ -872,7 +869,7 @@ class xrdcpSiteMover(SiteMover.SiteMover):
         status, output = self.stageIn(gpfn, fullname, fsize, fchecksum, experiment)
 
         if status == 0:
-            updateFileState(lfn, workDir, jobId, mode="file_state", state="transferred", type="input")
+            updateFileState(lfn, workDir, jobId, mode="file_state", state="transferred", ftype="input")
 
         self.prepareReport(output["report"], report)
         return status, output["errorLog"]
@@ -907,7 +904,7 @@ class xrdcpSiteMover(SiteMover.SiteMover):
             tolog("Treating PanDA Mover job as a production job during stage-out")
             analysisJob = False
 
-        # get the DQ2 tracing report
+        # get the Rucio tracing report
         report = self.getStubTracingReport(pdict['report'], 'xrdcp', lfn, guid)
 
 
@@ -921,14 +918,14 @@ class xrdcpSiteMover(SiteMover.SiteMover):
             self.prepareReport(reportState, report)
             return self.put_data_retfail(ec, pilotErrorDiag)
 
-        # get the DQ2 site name from ToA
+        # get the RSE from ToA
         try:
-            _dq2SiteName = self.getDQ2SiteName(surl=surl)
+            _RSE = self.getRSE(surl=surl)
         except Exception, e:
-            tolog("Warning: Failed to get the DQ2 site name: %s (can not add this info to tracing report)" % str(e))
+            tolog("Warning: Failed to get RSE: %s (can not add this info to tracing report)" % str(e))
         else:
-            report['localSite'], report['remoteSite'] = (_dq2SiteName, _dq2SiteName)
-            tolog("DQ2 site name: %s" % (_dq2SiteName))
+            report['localSite'], report['remoteSite'] = (_RSE, _RSE)
+            tolog("RSE: %s" % (_RSE))
 
         if testLevel == "1":
             source = "thisisjustatest"

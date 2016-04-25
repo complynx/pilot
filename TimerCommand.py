@@ -13,6 +13,7 @@
 import os
 import signal
 import time
+import traceback
 
 from Queue import Empty, Full
 import subprocess, threading
@@ -56,14 +57,33 @@ class TimerCommand(object):
 
             if not self.stdout:
                 self.stdout = ''
-            self.stdout += "Command Timeout(%s seconds)." % timeoutout
+            self.stdout += "Command time-out: %s s" % timeout
 
-        return self.process.returncode, self.stdout
+        if self.process:
+            returncode = self.process.returncode
+        else:
+            returncode = 1
+
+        if returncode != 1 and 'Command time-out' in self.stdout:
+            returncode = 1
+
+        if returncode == None:
+            returncode = 0
+
+        return returncode, self.stdout
 
     def runFunction(self, func, args, timeout=3600):
         def target(func, args, retQ):
-            ret= func(*args)
-            retQ.put(ret)
+            error = ''
+            try:
+                signal.signal(signal.SIGTERM, signal.SIG_DFL)
+            except:
+                error = error + '%s\n' % traceback.format_exc()
+            try:
+                ret= func(*args)
+                retQ.put(ret)
+            except:
+                retQ.put((-1, error + '%s\n' % traceback.format_exc()))
 
         retQ = Queue()
         process = Process(target=target, args=(func, args, retQ))
@@ -77,12 +97,14 @@ class TimerCommand(object):
                     process.terminate()
                     process.join(2)
                 if process.is_alive():
-                    os.kill(int(process.pid), signal.SIGKILL)
+                    # os.kill(int(process.pid), signal.SIGKILL)
+                    process.terminate()
                     process.join(2)
             except:
                 if process.is_alive():
                     try:
-                        os.kill(int(process.pid), signal.SIGKILL)
+                        # os.kill(int(process.pid), signal.SIGKILL)
+                        process.terminate()
                     except:
                         pass
                     process.join(2)

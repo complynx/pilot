@@ -1,6 +1,7 @@
 import sys, os, signal, time, shutil, cgi
 import commands, re
 import urllib
+import json
 
 from xml.dom import minidom
 from xml.dom.minidom import Document
@@ -24,11 +25,22 @@ except:
 try:
     from PilotErrors import PilotErrors
     from config import config_sm
-    from timed_command import timed_command
-
     CMD_CHECKSUM = config_sm.COMMAND_MD5
 except:
     pass
+
+# Functions to serialize ARGO messages
+
+def serialize(obj):
+    return json.dumps(obj,sort_keys=True,indent=2, separators=(',', ': '))
+
+def deserialize(text):
+    return json.loads(text)
+
+def convert_unicode_string(unicode_string):
+    if unicode_string is not None:
+        return str(unicode_string)
+    return None
 
 # all files that need to be copied to the workdir
 #fileList = commands.getoutput('ls *.py').split()
@@ -48,23 +60,29 @@ def getFileList(path_dir=None):
         return []
 
 # default pilot log files
-pilotlogFilename = "pilotlog.out"
+pilotlogFilename = "pilotlog.txt"
+essentialPilotlogFilename = "pilotlog-essential.txt"
 pilotstderrFilename = "pilot.stderr"
 
 def setPilotlogFilename(filename):
-    """ set the pilot log file name"""
+    """ Set the pilot log file name """
 
-    global pilotlogFilename
+    global pilotlogFilename, essentialPilotlogFilename
+
     if len(filename) > 0:
         pilotlogFilename = filename
 
+        # Add the essential sub string
+        base = pilotlogFilename[:pilotlogFilename.find('.')] # pilotlog.txt -> pilotlog
+        essentialPilotlogFilename = pilotlogFilename.replace(base, base+'-essential')
+
 def getPilotlogFilename():
-    """ return the pilot log file name"""
+    """ Return the pilot log file name """
 
     return pilotlogFilename
 
 def setPilotstderrFilename(filename):
-    """ set the pilot stderr file name"""
+    """ Set the pilot stderr file name"""
 
     global pilotstderrFilename
     if len(filename) > 0:
@@ -94,8 +112,45 @@ def appendToLog(txt):
         else:
             print "WARNING: Exception caught: %s" % e
 
-def tolog(msg, tofile=True):
-    """ write date+msg to pilot log and to stdout """
+def tologNew(msg, tofile=True, label='INFO', essential=False):
+    """ Write message to pilot log and to stdout """
+
+    # remove backquotes from the msg since they cause problems with batch submission of pilot
+    # (might be present in error messages from the OS)
+    msg = msg.replace("`","'")
+    msg = msg.replace('"','\\"')
+
+    import logging
+    logging.basicConfig(stream=sys.stdout, level=logging.DEBUG, format='%(asctime)s\t%(process)d\t%(levelname)s\t%(message)s')
+    from Logger import Logger
+    if essential:
+        log = Logger(filename=essentialPilotlogFilename)
+    else:
+        log = Logger(filename=pilotlogFilename)
+
+    if tofile:
+        if label == 'INFO':
+            log.info(msg)
+        elif label == 'WARNING':
+            log.warning(msg)
+        elif label == 'DEBUG':
+            log.debug(msg)
+        elif label == 'ERROR':
+            log.error(msg)
+        elif label == 'CRITICAL':
+            log.critical(msg)
+        else:
+            log.warning('Unknown label: %s' % (label))
+            log.info(msg)
+    else:
+        print msg
+
+    # write any serious messages to stderr
+    if label == 'ERROR' or label == 'CRITICAL':
+        print >> sys.stderr, msg # write any FAILED messages to stderr
+
+def tolog(msg, tofile=True, label='INFO', essential=False):
+    """ Write date+msg to pilot log and to stdout """
 
     import inspect
 
@@ -190,6 +245,8 @@ def httpConnect(data, url, mode="UPDATE", sendproxy=False, path=None, experiment
         cmd = 'getEventRanges'
     elif mode == "UPDATEEVENTRANGE":
         cmd = 'updateEventRange'
+    elif mode == "UPDATEEVENTRANGES":
+        cmd = 'updateEventRanges'
     elif mode == "GETKEYPAIR":
         cmd = 'getKeyPair'
     else:
@@ -1118,13 +1175,13 @@ def createPoolFileCatalog(file_dictionary, lfns, pfc_name="PoolFileCatalog.xml",
             pfn.setAttribute('name', sfn)
             physical.appendChild(pfn)
 
-            # forceLogical is set for TURL based PFCs. In this case, the LFN must not contain any __DQ2-parts
+            # forceLogical is set for TURL based PFCs. In this case, the LFN must not contain any legacy __DQ2-parts
             if forceLogical:
                 logical = doc.createElement('logical')
                 logical.setAttribute('name', os.path.basename(sfn))
                 _file.appendChild(logical)
 
-                # remove any __DQ2 substring from the LFN if necessary
+                # remove any legacy __DQ2 substring from the LFN if necessary
                 _lfn = getLFN(sfn, lfns) #os.path.basename(sfn)
                 if "__DQ2" in _lfn:
                     _lfn = stripDQ2FromLFN(_lfn)
@@ -1422,55 +1479,6 @@ def removeSRMInfo(f0):
 
     return fields0
 
-def lateRegistration(ub, job, type="unknown"):
-    """ late registration used by the job recovery """
-
-    # function will return True if late registration has been performed, False if it failed
-    # and None if there is nothing to do
-    status = False
-    latereg = False
-    fields = None
-
-    # protect against old jobState files which may not have the new variables
-    try:
-        tolog("type: %s" % (type))
-        if type == "output":
-            if job.output_latereg == "False":
-                latereg = False
-            else:
-                latereg = True
-            fields = job.output_fields
-        elif type == "log":
-            if job.log_latereg == "False":
-                latereg = False
-            else:
-                latereg = True
-            fields = job.log_field
-        else:
-            tolog("!!WARNING!!4000!! Unknown id type for registration: %s" % (type))
-            tolog("!!WARNING!!4000!! Skipping late registration step")
-            pass
-    except Exception, e:
-        tolog("!!WARNING!!4000!! Late registration has come upon an old jobState file - can not perform this step: %s" % e)
-        pass
-    else:
-        tolog("latereg: %s" % str(latereg))
-        tolog("fields: %s" % str(fields))
-        # should late registration be performed?
-#        if latereg:
-#            ec, ret = registerFiles(fields, ub=ub)
-#            if ec == 0:
-#                tolog("registerFiles done")
-#                status = True
-#            else:
-#                tolog("!!WARNING!!4000!! File registration returned: (%d, %s)" % (ec, ret))
-
-    if not latereg:
-        tolog("Nothing to register (%s)" % (type))
-        return None
-    else:
-        return status
-
 def isAnalysisJob(trf):
     """ Determine whether the job is an analysis job or not """
 
@@ -1487,21 +1495,20 @@ def timedCommand(cmd, timeout=300):
     tolog("Executing command: %s (protected by timed_command, timeout: %d s)" % (cmd, timeout))
     t0 = os.times()
     try:
-        exitcode, telapsed, cout, cerr = timed_command(cmd, timeout)
+        from TimerCommand import TimerCommand
+        timerCommand = TimerCommand(cmd)
+        exitcode, output = timerCommand.run(timeout=timeout)
     except Exception, e:
-        pilotErrorDiag = 'timed_command() threw an exception: %s' % e
+        pilotErrorDiag = 'TimedCommand() threw an exception: %s' % e
         tolog("!!WARNING!!2220!! %s" % pilotErrorDiag)
         exitcode = 1
-        output = e
-        t1 = os.times()
-        telapsed = int(round(t1[4] - t0[4]))
+        output = str(e)
     else:
-        if cerr != "" and exitcode != 0:
-            tolog("!!WARNING!!2220!! Timed command stderr: %s" % (cerr))
-            output = cerr
-        else:
-            output = cout
+        if exitcode != 0:
+            tolog("!!WARNING!!2220!! Timed command returned: %s" % (output))
 
+    t1 = os.times()
+    telapsed = int(round(t1[4] - t0[4]))
     tolog("Elapsed time: %d" % (telapsed))
 
     if telapsed >= timeout:
@@ -1526,13 +1533,13 @@ def stringToFields(jobFields):
 
     return fields
 
-def readpar(parameter, alt=False, version=0):
+def readpar(parameter, alt=False, version=0, queuename=None):
     """ Read 'parameter' from queuedata via SiteInformation class """
 
     from SiteInformation import SiteInformation
     si = SiteInformation()
 
-    return si.readpar(parameter, alt=alt, version=version)
+    return si.readpar(parameter, alt=alt, version=version, queuename=queuename)
 
 def getBatchSystemJobID():
     """ return the batch system job id (will be reported to the server) """
@@ -1903,7 +1910,7 @@ class _Curl:
         # verification of the host certificate
         self._verifyHost = True
         # modified for Titan test
-        if ('HPC_' in readpar("catchall")) or ('ORNL_Titan_install' in readpar("nickname")):
+        if ('HPC_Titan' in readpar("catchall")) or ('ORNL_Titan_install' in readpar("nickname")):
             self._verifyHost = False
 
         # request a compressed response
@@ -2671,12 +2678,19 @@ def getChecksumCommand():
     return sitemover.getChecksumCommand()
 
 def tailPilotErrorDiag(pilotErrorDiag, size=256):
-    """ Return the last 256 characters of pilotErrorDiag """
+    """ Return the last n characters of pilotErrorDiag """
 
     try:
         return pilotErrorDiag[-size:]
-    except Exception, e:
-        tolog("Warning: tailPilotErrorDiag caught exception: %s" % e)
+    except:
+        return pilotErrorDiag
+
+def headPilotErrorDiag(pilotErrorDiag, size=256):
+    """ Return the first n characters of pilotErrorDiag """
+
+    try:
+        return pilotErrorDiag[:size]
+    except:
         return pilotErrorDiag
 
 def getMaxInputSize(MB=False):
@@ -2697,9 +2711,6 @@ def getMaxInputSize(MB=False):
                 _maxinputsize = MAX_INPUT_FILESIZES_MB
             else:
                 _maxinputsize = MAX_INPUT_FILESIZES
-        else:
-            # 2 GB correction (ignoring that 2000 != 2048 MB..)
-            _maxinputsize -= 2000
     else:
         if MB:
             _maxinputsize = MAX_INPUT_FILESIZES_MB
@@ -2799,8 +2810,6 @@ def getFileAccessInfo():
     # default values
     oldPrefix = None
     newPrefix = None
-    useFileStager = None
-    directIn = None
 
     # move input files from local DDM area to workdir if needed using a copy tool (can be turned off below in case of remote I/O)
     useCT = True
@@ -2819,27 +2828,28 @@ def getFileAccessInfo():
             useCT = False
         oldPrefix = dInfo['oldPrefix']
         newPrefix = dInfo['newPrefix']
-        useFileStager = dInfo['useFileStager']
-        directIn = dInfo['directIn']
     if useCT:
         tolog("Copy tool will be used for stage-in")
     else:
-        if useFileStager:
-            tolog("File stager mode: Copy tool will not be used for stage-in of root files")
-        else:
-            tolog("Direct access mode: Copy tool will not be used for stage-in of root files")
-            if oldPrefix == "" and newPrefix == "":
-                tolog("Will attempt to create a TURL based PFC")
+        tolog("Direct access mode: Copy tool will not be used for stage-in of root files")
+        if oldPrefix == "" and newPrefix == "":
+            tolog("Will attempt to create a TURL based PFC")
 
-    return useCT, oldPrefix, newPrefix, useFileStager, directIn
+    return useCT, oldPrefix, newPrefix
 
-def isLogfileCopied(workdir):
+def isLogfileCopied(workdir, jobId=None):
     """ check whether the log file has been copied or not """
 
-    if os.path.exists(workdir + '/LOGFILECOPIED'):
-        return True
+    if jobId:
+        if os.path.exists(workdir + '/LOGFILECOPIED_%s' % jobId):
+            return True
+        else:
+            return False
     else:
-        return False
+        if os.path.exists(workdir + '/LOGFILECOPIED'):
+            return True
+        else:
+            return False
 
 def isLogfileRegistered(workdir):
     """ check whether the log file has been registered or not """
@@ -2872,7 +2882,6 @@ def updateJobState(job, site, workNode, recoveryAttempt=0):
 def chdir(dir):
     """ keep track of where we are... """
 
-    tolog("chdir to: %s" % (dir))
     os.chdir(dir)
     tolog("current dir: %s" % (os.getcwd()))
 
@@ -3102,10 +3111,8 @@ def makeJobReport(job, logExtracts, foundCoreDump, version, jobIds):
         else:
             tolog(". Length pilot error diag   : %d" % (lenPilotErrorDiag))
         if job.pilotErrorDiag != "":
-            if lenPilotErrorDiag > 80:
-                tolog(". Pilot error diag [:80]    : %s" % (job.pilotErrorDiag[:80]))
-            else:
-                tolog(". Pilot error diag          : %s" % (job.pilotErrorDiag))
+            l = 100
+            tolog(". Pilot error diag [%d:]    : %s" % (l, headPilotErrorDiag(job.pilotErrorDiag, size=l)))
         else:
             tolog(". Pilot error diag          : Empty")
     else:
@@ -3512,7 +3519,7 @@ def getSiteInformation(experiment):
 def dumpPilotInfo(version, pilot_version_tag, pilotId, jobSchedulerId, pilot_initdir, tofile=True):
     """ Pilot info """
 
-    tolog("Panda Pilot, version %s" % (version), tofile=tofile)
+    tolog("PanDA Pilot, version %s" % (version), tofile=tofile, essential=True)
     tolog("Version tag = %s" % (pilot_version_tag))
     tolog("PilotId = %s, jobSchedulerId = %s" % (str(pilotId), str(jobSchedulerId)), tofile=tofile)
     tolog("Current time: %s" % (timeStamp()), tofile=tofile)
@@ -3621,10 +3628,10 @@ def decode_string(encoded_string):
     return decoded_string
 
 def stripDQ2FromLFN(lfn):
-    """ Remove any __DQ2 part of an LFN """
+    """ Remove any legacy __DQ2 part of an LFN """
     # E.g. LFN = AOD.505307._000001.pool.root.9__DQ2-1315236060
     # -> AOD.505307._000001.pool.root.9
-    # This method assumes that the LFN contains the __DQ2-<nr> substring
+    # This method assumes that the LFN contains the legacy __DQ2-<nr> substring
 
     pattern = "(\s*)\_\_DQ2\-[0-9]+"
 
@@ -3633,7 +3640,7 @@ def stripDQ2FromLFN(lfn):
         try:
             __DQ2 = found.group(0)
         except Exception, e:
-            tolog("!!WARNING!!1112!! Failed to identify __DQ2 substring: %s" % (e))
+            tolog("!!WARNING!!1112!! Failed to identify legacy __DQ2 substring: %s" % (e))
         else:
             lfn = lfn.replace(__DQ2, "")
 
@@ -4500,3 +4507,67 @@ def dumpFile(filename, topilotlog=False):
             tolog("Dumped %d lines from file %s" % (i, filename))
     else:
         tolog("!!WARNING!!4000!! %s does not exist" % (filename))
+
+def tryint(x):
+    """ Used by numbered string comparison (to protect against unexpected letters in version number) """
+
+    try:
+        return int(x)
+    except ValueError:
+        return x
+
+def splittedname(s):
+    """ Used by numbered string comparison """
+
+    # Can also be used for sorting:
+    # > names = ['YT4.11', '4.3', 'YT4.2', '4.10', 'PT2.19', 'PT2.9']
+    # > sorted(names, key=splittedname)
+    # ['4.3', '4.10', 'PT2.9', 'PT2.19', 'YT4.2', 'YT4.11']
+
+    from re import split
+    return tuple(tryint(x) for x in split('([0-9]+)', s))
+
+def isAGreaterOrEqualToB(A, B):
+    """ Is numbered string A > B? """
+    # > a="1.2.3"
+    # > b="2.2.2"
+    # > e.isAGreaterThanB(a,b)
+    # False
+
+    return splittedname(A) >= splittedname(B)
+
+def recursive_overwrite(src, dest, ignore=None):
+    if os.path.isdir(src):
+        if not os.path.isdir(dest):
+            os.makedirs(dest)
+        files = os.listdir(src)
+        if ignore is not None:
+            ignored = ignore(src, files)
+        else:
+            ignored = set()
+        for f in files:
+            if f not in ignored:
+                recursive_overwrite(os.path.join(src, f),
+                                    os.path.join(dest, f),
+                                    ignore)
+    else:
+        shutil.copyfile(src, dest)
+
+def chunks(l, n):
+    """
+    Yield successive n-sized chunks from l.
+    """
+    for i in xrange(0, len(l), n):
+        yield l[i:i+n]
+
+def merge_dictionaries(*dict_args):
+    """
+    Given any number of dicts, shallow copy and merge into a new dict.
+    precedence goes to key value pairs in latter dicts
+    """
+
+    result = {}
+    for dictionary in dict_args:
+        result.update(dictionary)
+
+    return result

@@ -3,13 +3,13 @@
 import os
 from pUtil import httpConnect, tolog
 
-def downloadEventRanges(jobId, jobsetID):
+def downloadEventRanges(jobId, jobsetID, taskID):
     """ Download event ranges from the Event Server """
 
     # Return the server response (instruction to AthenaMP)
     # Note: the returned message is a string (of a list of dictionaries). If it needs to be converted back to a list, use json.loads(message)
 
-    tolog("Downloading new event ranges for jobId=%s and jobsetID=%s" % (jobId, jobsetID))
+    tolog("Downloading new event ranges for jobId=%s, taskID=%s and jobsetID=%s" % (jobId, taskID, jobsetID))
 
     # message = "[{u'lastEvent': 2, u'LFN': u'mu_E50_eta0-25.evgen.pool.root',u'eventRangeID': u'130-2068634812-21368-1-1', u'startEvent': 2, u'GUID':u'74DFB3ED-DAA7-E011-8954-001E4F3D9CB1'}]"
 
@@ -19,6 +19,7 @@ def downloadEventRanges(jobId, jobsetID):
     node = {}
     node['pandaID'] = jobId
     node['jobsetID'] = jobsetID
+    node['taskID'] = taskID 
 
     # open connection
     ret = httpConnect(node, url, path=os.getcwd(), mode="GETEVENTRANGES")
@@ -34,7 +35,7 @@ def downloadEventRanges(jobId, jobsetID):
 
     return message
 
-def updateEventRange(event_range_id, eventRangeList, status='finished'):
+def updateEventRange(event_range_id, eventRangeList, jobId, status='finished', os_bucket_id=-1):
     """ Update an event range on the Event Server """
 
     tolog("Updating an event range..")
@@ -44,6 +45,8 @@ def updateEventRange(event_range_id, eventRangeList, status='finished'):
     node = {}
     node['eventRangeID'] = event_range_id
 
+    if os_bucket_id != -1:
+        node['objstoreID'] = os_bucket_id
     if eventRangeList != []:
         pass
         # node['cpu'] =  eventRangeList[1]
@@ -57,6 +60,19 @@ def updateEventRange(event_range_id, eventRangeList, status='finished'):
     if ret[0]: # non-zero return code
         message = "Server responded with error code = %d" % (ret[0])
     else:
-        message = ""
+        # is there an instruction in the back channel?
+        data = ret[1]
+        tolog("data=%s"%str(data))
+        from json import loads
+        try:
+            d = loads(data['Command'])
+        except Exception, e:
+            tolog("No message found in updateEventRange back channel: %s" % (e))
+            message = ""
+        else:
+            # does the returned dictionary contain any kill instructions?
+            # {PandaID: u'tobekilled'} for normal kill 
+            # {PandaID: u'softkill'} for soft kill
+            message = d.get(jobId, "")
 
     return message

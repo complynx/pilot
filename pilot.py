@@ -26,6 +26,7 @@ from Configuration import Configuration
 from WatchDog import WatchDog
 from Monitor import Monitor
 import subprocess
+import DeferredStageout
 
 try:
     from rucio.client import Client
@@ -40,13 +41,12 @@ globalSite = None
 
 def usage():
     """
-    usage: python pilot.py -s <sitename> -d <workdir> -a <appdir> -w <url> -p <port> -q <dq2url> -u <user> -m <outputdir> -g <inputdir> -r <rmwkdir> -j <jrflag> -n <jrmax> -c <jrmaxatt> -f <jreqflag> -e <logfiledir> -b <debuglevel> -h <queuename> -x <stageinretry> -y <loggingMode> -z <updateserver> -k <memory> -t <proxycheckflag> -l <wrapperflag> -i <pilotreleaseflag> -o <countrygroup> -v <workingGroup> -A <allowOtherCountry> -B <unused> -C <timefloor> -D <useCoPilot> -E <stageoutretry> -F <experiment> -G <getJobMaxTime> -H <cache> -I <schedconfigURL>
+    usage: python pilot.py -s <sitename> -d <workdir> -a <appdir> -w <url> -p <port> -u <user> -m <outputdir> -g <inputdir> -r <rmwkdir> -j <jrflag> -n <jrmax> -c <jrmaxatt> -f <jreqflag> -e <logfiledir> -b <debuglevel> -h <queuename> -x <stageinretry> -y <loggingMode> -z <updateserver> -k <memory> -t <proxycheckflag> -l <wrapperflag> -i <pilotreleaseflag> -o <countrygroup> -v <workingGroup> -A <allowOtherCountry> -B <unused> -C <timefloor> -D <useCoPilot> -E <stageoutretry> -F <experiment> -G <getJobMaxTime> -H <cache> -I <schedconfigURL>
     where:
                <sitename> is the name of the site that this job is landed,like BNL_ATLAS_1
                <workdir> is the pathname to the work directory of this job on the site
                <appdir> is the pathname to the directory of the executables
                <url> is the URL of the PanDA server
-               <dq2url> is the URL of the https web server for the local site's DQ2 siteservice
                <port> is the port on which the web server listens on
                <user> is a flag meaning this pilot is to get a user analysis job from dispatcher if set to user (test will return a test job)
                <mtflag> controls if this pilot runs in single or multi-task mode, for multi-task mode, set it to true, all other values is for single mode
@@ -171,7 +171,7 @@ def argParser(argv):
             env['queuename'] = a
 
         elif o == "-i":
-            if a == "PR" or a == "RC":
+            if a == "PR" or (a and a.startswith("RC")):
                 env['pilot_version_tag'] = a
             else:
                 print "Unknown pilot version tag: %s" % (a)
@@ -216,9 +216,6 @@ def argParser(argv):
                 env['psport'] = int(a)
             except ValueError:
                 print "psport not an integer:", a
-
-        elif o == "-q":
-            env['dq2url'] = a
 
         elif o == "-r":
             rmwd = a
@@ -328,11 +325,11 @@ def argParser(argv):
 
     # force user jobs for ANALY sites
     if env['sitename'].startswith('ANALY_'):
-        if env['uflag'] != 'user' and env['uflag'] != 'self' and env['uflag'] != 'ptest' and env['uflag'] != 'rucio_test':
+        if env['uflag'] not in ['user', 'self', 'ptest', 'rucio_test', 'ptest_rucio']:
             env['uflag'] = 'user'
-            pUtil.tolog("Pilot user flag has been reset for analysis site (to value: %s)" % (env['uflag']))
+            pUtil.tolog("Pilot user flag has been reset for analysis site (to value: %s)" % env['uflag'])
         else:
-            pUtil.tolog("Pilot user flag: %s" % str(env['uflag']))
+            pUtil.tolog("Pilot user flag: %s" % env['uflag'])
 
 def moveLostOutputFiles(job, thisSite, remaining_files):
     """
@@ -435,8 +432,8 @@ def moveLostOutputFiles(job, thisSite, remaining_files):
     _msg = ""
     try:
         # Note: alt stage-out numbers are not saved in recovery mode (job object not returned from this function)
-        rc, pilotErrorDiag, rf, rs, job.filesNormalStageOut, job.filesAltStageOut = mover.mover_put_data("xmlcatalog_file:%s" % (file_path), dsname,
-                                                          thisSite.sitename, thisSite.computingElement, ub=thisSite.dq2url, analysisJob=analJob,
+        rc, pilotErrorDiag, rf, rs, job.filesNormalStageOut, job.filesAltStageOut, os_bucket_id = mover.mover_put_data("xmlcatalog_file:%s" % (file_path), dsname,
+                                                          thisSite.sitename, thisSite.computingElement, analysisJob=analJob,
                                                           proxycheck=env['proxycheckFlag'], spsetup=job.spsetup,scopeOut=job.scopeOut, scopeLog=job.scopeLog,
                                                           token=job.destinationDBlockToken, pinitdir=env['pilot_initdir'],
                                                           datasetDict=datasetDict, prodSourceLabel=job.prodSourceLabel,
@@ -524,6 +521,57 @@ def FinishedJob(job):
 
     return state
 
+def runJobRecoveryNew(thisSite, _psport, extradir):
+    """
+    run the lost job recovery algorithm
+    """
+
+    tmpdir = os.getcwd()
+
+    # check queuedata for external recovery directory
+    recoveryDir = "" # an empty recoveryDir means that recovery should search local WN disk for lost jobs
+    try:
+        recoveryDir = pUtil.readpar('recoverdir')
+    except:
+        pass
+    else:
+        # make sure the recovery directory actually exists (will not be added to dir list if empty)
+        recoveryDir = pUtil.verifyRecoveryDir(recoveryDir)
+
+    # run job recovery
+    dirs = [DeferredStageout.GetDefaultDeferredStageoutDir(thisSite=thisSite,
+                                        deferred_stageout_logfile="pilotlog-deferredstageout-{job_id}.txt")]
+    if recoveryDir != "":
+        dirs.append(recoveryDir)
+        pUtil.tolog("Job recovery will scan both local disk and external disk")
+    if extradir != "":
+        if extradir not in dirs:
+            dirs.append(extradir)
+            pUtil.tolog("Job recovery will also scan extradir (%s)" % (extradir))
+
+    recovered = DeferredStageout.DeferredStageout(dirs, env['maxjobrec'],
+                                        deferred_stageout_logfile="pilotlog-deferredstageout-{job_id}.txt")
+
+    #dircounter = 0
+    # for _dir in dirs:
+    #     dircounter += 1
+    #     pUtil.tolog("Scanning for lost jobs [pass %d/%d]" % (dircounter, len(dirs)))
+    #
+    #     try:
+    #         lostPandaIDs = RecoverLostHPCEventJobs(_dir, thisSite, _psport)
+    #     except:
+    #         pUtil.tolog("!!WARNING!!1999!! Failed during search for lost HPCEvent jobs: %s" % str(e))
+    #     else:
+    #         pUtil.tolog("Recovered/Updated lost HPCEvent jobs(%s)" % (lostPandaIDs))
+    #
+    #     try:
+    #        found_lost_jobs = RecoverLostJobs(_dir, thisSite, _psport)
+    #     except Exception, e:
+    #         pUtil.tolog("!!WARNING!!1999!! Failed during search for lost jobs: %s" % str(e))
+    #     else:
+    #         pUtil.tolog("Recovered/Updated %d lost job(s)" % (found_lost_jobs))
+    pUtil.chdir(tmpdir)
+
 def runJobRecovery(thisSite, _psport, extradir):
     """
     run the lost job recovery algorithm
@@ -555,6 +603,14 @@ def runJobRecovery(thisSite, _psport, extradir):
     for _dir in dirs:
         dircounter += 1
         pUtil.tolog("Scanning for lost jobs [pass %d/%d]" % (dircounter, len(dirs)))
+    
+        try:
+            lostPandaIDs = RecoverLostHPCEventJobs(_dir, thisSite, _psport)
+        except:
+            pUtil.tolog("!!WARNING!!1999!! Failed during search for lost HPCEvent jobs: %s" % str(e))
+        else:
+            pUtil.tolog("Recovered/Updated lost HPCEvent jobs(%s)" % (lostPandaIDs))
+    
         try:
             found_lost_jobs = RecoverLostJobs(_dir, thisSite, _psport)
         except Exception, e:
@@ -644,7 +700,7 @@ def RecoverLostJobs(recoveryDir, thisSite, _psport):
     else:
         JS = JobState()
         # grab all job state files in all work directories
-        job_state_files = glob(dir_path + "/Panda_Pilot_*/jobState-*.pickle")
+        job_state_files = glob(dir_path + "/Panda_Pilot_*/jobState-*.*")
 
         # purge any test job state files (testing for new job rec algorithm)
         job_state_files = pUtil.removeTestFiles(job_state_files, mode="default")
@@ -846,22 +902,6 @@ def RecoverLostJobs(recoveryDir, thisSite, _psport):
 
                                 # update job state file at this point to prevent a parallel pilot from doing a simultaneous recovery
                                 _retjs = pUtil.updateJobState(_job, _site, _node, _recoveryAttempt)
-
-                                # should any file be registered? (data dirs will not exist in the following checks
-                                # since late registration requires that all files have already been transferred)
-                                # (Note: only for LRC sites)
-#                                rc = checkForLateRegistration(thisSite.dq2url, _job, _site, _node, type="output")
-#                                if rc == False:
-#                                    pUtil.tolog("Resume this rescue operation later due to the previous errors")
-#                                    # release the atomic lockfile and go to the next directory
-#                                    releaseAtomicLockFile(fd, lockfile_name)
-#                                    continue
-#                                rc = checkForLateRegistration(thisSite.dq2url, _job, _site, _node, type="log")
-#                                if rc == False:
-#                                    pUtil.tolog("Resume this rescue operation later due to the previous errors")
-#                                    # release the atomic lockfile and go to the next directory
-#                                    releaseAtomicLockFile(fd, lockfile_name)
-#                                    continue
 
                                 # does log exist?
                                 logfile = "%s/%s" % (_site.workdir, _job.logFile)
@@ -1315,13 +1355,6 @@ def RecoverLostJobs(recoveryDir, thisSite, _psport):
 
                                         pUtil.tolog("Work dir does not exist (log probably already transferred)")
 
-                                        # should an old log be registered? (log file will not exist since late registration requires
-                                        # that the log has already been transferred)
-#                                        rc = checkForLateRegistration(thisSite.dq2url, _job, _site, _node, type="log")
-#                                        if rc == False:
-#                                            pUtil.tolog("Resume this rescue operation later since the LRC is not working (log could not be registered)")
-#                                            continue
-
                                         # does data directory exist?
                                         if os.path.isdir(_job.datadir):
 
@@ -1576,6 +1609,84 @@ def RecoverLostJobs(recoveryDir, thisSite, _psport):
     pUtil.chdir(currentDir)
     return number_of_recoveries
 
+def RecoverLostHPCEventJobs(recoveryDir, thisSite, _psport):
+    """
+    Recover Lost HPC Event job
+    """
+
+    if recoveryDir != "":
+        dir_path = recoveryDir
+    else:
+        dir_path = thisSite.wntmpdir
+
+    pUtil.tolog("HPC Recovery algorithm will search external dir for lost jobs: %s" % (dir_path))
+    if dir_path == "":
+        pUtil.tolog("Recovery dir is empty, will not do anything.")
+        return None
+
+    try:
+        os.path.isdir(dir_path)
+    except:
+        pUtil.tolog("!!WARNING!!1100!! No such dir path (%s)" % (dir_path))
+    else:
+        HPC_state_files = glob(dir_path + "/Panda_Pilot_*/HPCManagerState.json")
+        pUtil.tolog("Number of found HPC job state files: %d" % (len(HPC_state_files)))
+        if HPC_state_files:
+            for file_path in HPC_state_files:
+                try:
+                    current_dir = os.getcwd()
+                    pUtil.tolog("Working on %s" % file_path)
+                    pUtil.tolog("Chdir from current dir %s to %s" % (current_dir, os.path.dirname(file_path)))
+                    pUtil.chdir(os.path.dirname(file_path))
+                    fd, lockfile_name = createAtomicLockFile(file_path)
+                    if not fd:
+                        continue
+
+                    from json import load
+                    with open(file_path) as data_file:
+                        HPC_state = load(data_file)
+                    job_state_file = HPC_state['JobStateFile']
+                    job_command = HPC_state['JobCommand']
+                    # global_work_dir = HPC_state['GlobalWorkingDir']
+                    JS = JobState()
+                    JS.get(job_state_file)
+                    _job, _site, _node, _recoveryAttempt = JS.decode()
+                    jobStatus, jobAttemptNr, jobStatusCode = pUtil.getJobStatus(_job.jobId, env['pshttpurl'], _psport, env['pilot_initdir'])
+                    # recover this job?
+                    if jobStatusCode == 20:
+                        pUtil.tolog("Received general error code from dispatcher call (leave job for later pilot)")
+                        # release the atomic lockfile and go to the next directory
+                        releaseAtomicLockFile(fd, lockfile_name)
+                        continue
+                    elif jobStatus == "failed" or \
+                         jobStatus == "notfound" or jobStatus == "finished" or "tobekilled" in _job.action:
+                        pUtil.tolog("Job %s is currently in state \'%s\' with attemptNr = %d (according to server - will not be recovered)" %\
+                                    (_job.jobId, jobStatus, jobAttemptNr))
+                        releaseAtomicLockFile(fd, lockfile_name)
+                        continue
+
+                    # update job state file at this point to prevent a parallel pilot from doing a simultaneous recovery
+                    _retjs = pUtil.updateJobState(_job, _site, _node, _recoveryAttempt)
+                    releaseAtomicLockFile(fd, lockfile_name)
+
+                    monitor = Monitor(env)
+                    monitor.monitor_recovery_job(_job, _site, _node, job_command, job_state_file, recover_dir=os.path.dirname(file_path))
+
+                    pUtil.tolog("Chdir back to %s" % current_dir)
+                    pUtil.chdir(current_dir)
+
+                    panda_jobs = glob(os.path.dirname(file_path) + "/PandaJob_*_*")
+                    panda_logs = glob(os.path.dirname(file_path) + "/*.log.tgz.*")
+                    if panda_jobs or panda_logs:
+                        pUtil.tolog("Number of founded panda jobs: %d, number of panda log tar file %d, will not remove recover dir" % (len(panda_jobs), len(panda_logs)))
+                    else:
+                        pUtil.tolog("Number of founded panda jobs: %d, number of panda log tar file %d, will remove recover dir" % (len(panda_jobs), len(panda_logs)))
+                        pUtil.tolog("Remove recovery dir %s" % os.path.dirname(file_path))
+                        os.system("rm -rf %s" % (os.path.dirname(file_path)))
+                except:
+                    pUtil.tolog("Failed to recovery lost HPC job: %s" % traceback.format_exc())
+                    releaseAtomicLockFile(fd, lockfile_name)
+
 def getProperNodeName(nodename):
     """ Get the proper node name (if possible, containing the _CONDOR_SLOT (SlotID)) """
 
@@ -1584,53 +1695,6 @@ def getProperNodeName(nodename):
         nodename = "%s@%s" % (os.environ["_CONDOR_SLOT"], nodename)
 
     return nodename
-
-def checkForLateRegistration(dq2url, job, site, node, type="output"):
-    """
-    check whether an old log file or any old output files
-    need to be registered
-    the type variable can assume the values "output" and "log"
-    """
-
-    # return:
-    #  True: registration succeeded
-    #  False: registration failed (job will remain in holding state)
-    status = False
-
-    if dq2url == "None" or dq2url == None or dq2url == "": # dq2url is 'None' outside the US
-        return True
-
-    rc = pUtil.lateRegistration(dq2url, job, type=type)
-    if rc:
-        # update job state file to prevent any further registration attempts for these files
-        try:
-            if type == "output":
-                job.output_latereg = "False"
-                job.output_fields = None
-                _retjs = pUtil.updateJobState(job, site, node)
-                status = True
-            elif type == "log":
-                job.log_latereg = "False"
-                job.log_field = None
-                _retjs = pUtil.updateJobState(job, site, node)
-                status = True
-            else:
-                pUtil.tolog("!!WARNING!!1150!! Unknown registration type (must be either output or log): %s" % (type))
-        except Exception, e:
-            pUtil.tolog("!!WARNING!!1150!! Exception caught (ignore): %s" % str(e))
-            pass
-        else:
-            pUtil.tolog("Late registration performed for non-registered %s file(s)" % (type))
-            if status and type == "log":
-                # create a weak lock file for the log registration
-                pUtil.createLockFile(env['jobrec'], site.workdir, lockfile="LOGFILEREGISTERED")
-    elif rc == False:
-        pUtil.tolog("Late registration failed, job will remain in holding state")
-    else: # None
-        pUtil.tolog("Late registration had nothing to do")
-        status = None
-
-    return status
 
 def updatePandaServer(job, site, port, xmlstr = None, spaceReport = False,
                       log = None, ra = 0, jr = False, schedulerID = None, pilotID = None,
@@ -1657,9 +1721,7 @@ def updatePandaServer(job, site, port, xmlstr = None, spaceReport = False,
 def transferLogFile(job, site, dest=None, jr=False):
     """
     save log tarball into DDM and register it to catalog, or copy it to 'dest'.
-    the job recovery will use the current site info known by the current
-    pilot and will override the old jobs' site.dq2url in case the dq2url
-    has been updated
+    the job recovery will use the current site info known by the current pilot
     """
 
     # create and instantiate the job log object
@@ -1676,7 +1738,6 @@ def dumpVars(thisSite):
     pUtil.tolog("Pilot options:................................................")
     pUtil.tolog("appdir: %s" % (thisSite.appdir))
     pUtil.tolog("debugLevel: %s" % str(env['debugLevel']))
-    pUtil.tolog("dq2url: %s" % str(thisSite.dq2url))
     pUtil.tolog("jobrec: %s" % str(env['jobrec']))
     pUtil.tolog("jobRequestFlag: %s" % str(env['jobRequestFlag']))
     pUtil.tolog("jobSchedulerId: %s" % str(env['jobSchedulerId']))
@@ -1870,10 +1931,15 @@ def getProdSourceLabel():
         prodSourceLabel = 'test'
 
     # override for release candidate pilots
-    if env['pilot_version_tag'] == "RC" and env['uflag'] != 'ptest':
-        prodSourceLabel = "rc_test"
-    if env['pilot_version_tag'] == "DDM" and env['uflag'] != 'ptest':
-        prodSourceLabel = "ddm"
+    if env['uflag'] != 'ptest' and env['pilot_version_tag']:
+        if env['pilot_version_tag'].startswith("RC"):
+            prodSourceLabel = "rc_test"
+            if env['pilot_version_tag'] == 'RCM':
+                prodSourceLabel = "rcm_test"
+            elif env['pilot_version_tag'] == 'RCMA': # RC Mover for ANALY site: temporary fix
+                prodSourceLabel = "rcm_test"
+        elif env['pilot_version_tag'] == "DDM":
+            prodSourceLabel = "ddm"
 
     return prodSourceLabel
 
@@ -2011,6 +2077,23 @@ def backupDispatcherResponse(response, tofile):
         pUtil.tolog("!!WARNING!!1999!! Could not store job definition: %s" % str(e), tofile=tofile)
     else:
         pUtil.tolog("Job definition stored (for later backup) in file %s" % (env['pandaJobDataFileName']), tofile=tofile)
+
+def dumpEnv():
+    localEnv = {}
+    localEnv['uflag'] = env['uflag']
+    localEnv['pilot_version_tag'] = env ['pilot_version_tag']
+    localEnv['workingGroup'] = env['workingGroup']
+    localEnv['countryGroup'] = env['countryGroup']
+    localEnv['allowOtherCountry'] = env['allowOtherCountry']
+    localEnv['pilotToken'] = env['pilotToken']
+    localEnv['pandaJobDataFileName'] = env['pandaJobDataFileName']
+    localEnv['pshttpurl'] = env['pshttpurl']
+    localEnv['psport'] = env['psport']
+    localEnv['experiment'] = env['experiment']
+
+    from json import dump
+    with open(os.path.join(env['thisSite'].workdir, 'env.json'), 'w') as outputFile:
+        dump(localEnv, outputFile)
 
 def getNewJob(tofile=True):
     """ Get a new job definition from the jobdispatcher or from file """
@@ -2272,7 +2355,7 @@ def getJob():
 
         # only set an error code if it's the first job
         if env['number_of_jobs'] == 0:
-            ec = error.ERR_GENERALERROR
+            ec = -1 #error.ERR_GENERALERROR
         else:
             errorText += "\nNot setting any error code since %d job(s) were already executed" % (env['number_of_jobs'])
             ec = -1 # temporary
@@ -2390,7 +2473,7 @@ def runMain(runpars):
 
         # parse the pilot argument list (e.g. queuename is updated)
         argParser(runpars)
-        args = [env['sitename'], env['appdir'], env['workdir'], env['dq2url'], env['queuename']]
+        args = [env['sitename'], env['appdir'], env['workdir'], env['queuename']]
 
         # fill in the site information by parsing the argument list
         env['thisSite'] = Site.Site()
@@ -2585,6 +2668,7 @@ def runMain(runpars):
             except Exception, e:
                 pUtil.tolog("Caught exception: %s" % (e))
 
+            dumpEnv()
             if env['glexec'] == 'False':
                 monitor = Monitor(env)
                 monitor.monitor_job()
@@ -2727,5 +2811,4 @@ def runMain(runpars):
 
 # main
 if __name__ == "__main__":
-
     runMain(sys.argv[1:])

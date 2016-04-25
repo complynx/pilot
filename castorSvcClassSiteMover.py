@@ -34,30 +34,6 @@ class castorSvcClassSiteMover(SiteMover.SiteMover):
         """CASTOR specific space verification.
         There is no simple way at the moment to verify CASTOR space availability - check info system instead"""
         return 999999
-        
-    def addMD5sum(self, lfn, md5sum):
-        """ add md5sum to lfn """
-        if os.environ.has_key('LD_LIBRARY_PATH'):
-            tolog("LD_LIBRARY_PATH prior to lfc import: %s" % os.environ['LD_LIBRARY_PATH'])
-        else:
-            tolog("!!WARNING!!2999!! LD_LIBRARY_PATH not set prior to lfc import")
-        import lfc
-        os.environ['LFC_HOST'] = readpar('lfchost')
-        stat = lfc.lfc_filestatg()
-        exitcode = lfc.lfc_statg(lfn, "", stat)
-        if exitcode != 0:
-            #    print "error:",buffer
-            err_num = lfc.cvar.serrno
-            tolog("!!WARNING!!2999!! lfc.lfc_statg: %d %s" % (err_num, lfn))
-            return exitcode
-        exitcode = lfc.lfc_setfsizeg(stat.guid, stat.filesize, 'MD', md5sum)
-        if exitcode != 0:
-            #    print "error:",buffer
-            err_num = lfc.cvar.serrno
-            tolog("[Non-fatal] ERROR: lfc.lfc_setfsizeg: %d %s %s" % (err_num, lfn, md5sum))
-            return exitcode
-        tolog("Successfully set md5sum for %s" % (lfn))
-        return exitcode
 
     def get_data(self, gpfn, lfn, path, fsize=0, fchecksum=0, guid=0, **pdict):
         """ The local file is assubed to have a relative path that is the same of the relative path in the 'gpfn'
@@ -75,7 +51,7 @@ class castorSvcClassSiteMover(SiteMover.SiteMover):
         workDir = pdict.get('workDir', '')
         prodDBlockToken = pdict.get('access', '')
 
-        # get the DQ2 tracing report
+        # get the Rucio tracing report
         report = self.getStubTracingReport(pdict['report'], 'castorSVC', lfn, guid)
 
         # get a proper envsetup
@@ -98,7 +74,7 @@ class castorSvcClassSiteMover(SiteMover.SiteMover):
         # 4948eec6-0000-1000-8ca2-aba0529b4806    "ATLASDATADISK" "atlasStripInput"   "DURABLE"       "ALLOCATED"
         # 4948ee8e-0000-1000-9ac5-81bb9b34ba7b    "ATLASMCTAPE"   "atlasSimRaw"       "PERMANENT"     "ALLOCATED"
         # 4948ee71-0000-1000-b611-a0afad31f6c8    "ATLASDATATAPE" "atlasT0Raw"        "PERMANENT"     "ALLOCATED"
-        #                                         "ATLASHOTDISK"  "atlasHotDisk"      
+        #                                         "ATLASHOTDISK"  "atlasHotDisk"
         # In addition there is the "atlasFarm" class, which is used when data is staged back from tape
         castorConfig = {
             'setup' : {
@@ -157,7 +133,7 @@ class castorSvcClassSiteMover(SiteMover.SiteMover):
             if useCT:
                 directIn = False
                 tolog("Direct access mode is switched off (file will be transferred with the copy tool)")
-                updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="copy_to_scratch", type="input")
+                updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="copy_to_scratch", ftype="input")
             else:
                 # determine if the file is a root file according to its name
                 rootFile = self.isRootFileName(lfn)
@@ -165,23 +141,23 @@ class castorSvcClassSiteMover(SiteMover.SiteMover):
                 if prodDBlockToken == 'local' or not rootFile:
                     directIn = False
                     tolog("Direct access mode has been switched off for this file (will be transferred with the copy tool)")
-                    updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="copy_to_scratch", type="input")
+                    updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="copy_to_scratch", ftype="input")
                 elif rootFile:
                     tolog("Found root file according to file name: %s (will not be transferred in direct reading mode)" % (lfn))
                     report['relativeStart'] = None
                     report['transferStart'] = None
                     self.prepareReport('FOUND_ROOT', report)
                     if useFileStager:
-                        updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="file_stager", type="input")
+                        updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="file_stager", ftype="input")
                     else:
-                        updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="remote_io", type="input")
+                        updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="remote_io", ftype="input")
                     return error.ERR_DIRECTIOFILE, pilotErrorDiag
                 else:
                     tolog("Normal file transfer")
 
         # Now need to find the service class associated with the file.
-        # If we find a clear indication of a space token in the file path 
-        # then this is easy. However, if we don't, then use stager_qry to 
+        # If we find a clear indication of a space token in the file path
+        # then this is easy. However, if we don't, then use stager_qry to
         # interrogate each possible service class. If this fails then use
         # atlasFarm in desperation.
         serviceClass = None
@@ -196,7 +172,7 @@ class castorSvcClassSiteMover(SiteMover.SiteMover):
         # For testing the fallback, then we need to hobble ourselves by unsetting serviceClass:
         #tolog('Automatic service class was: %s' % serviceClass)
         #tolog('Unsetting service class for fallback testing')
-        #serviceClass = None        
+        #serviceClass = None
         if serviceClass == None:
             tolog("Warning: Failed to find service class hint in SURL.")
 
@@ -295,7 +271,7 @@ class castorSvcClassSiteMover(SiteMover.SiteMover):
         else:
             csumtype = "default"
 
-        # get remote file size and checksum 
+        # get remote file size and checksum
         ec, pilotErrorDiag, dstfsize, dstfchecksum = self.getLocalFileInfo(dest_file, csumtype=csumtype)
         if ec != 0:
             self.prepareReport('LOCAL_FILE_INFO_FAIL', report)
@@ -307,7 +283,7 @@ class castorSvcClassSiteMover(SiteMover.SiteMover):
 
             return ec, pilotErrorDiag
 
-        # get remote file size and checksum 
+        # get remote file size and checksum
         if dstfsize != fsize:
             pilotErrorDiag = "Remote and local file sizes do not match for %s (%s != %s)" %\
                              (os.path.basename(gpfn), str(dstfsize), str(fsize))
@@ -339,14 +315,14 @@ class castorSvcClassSiteMover(SiteMover.SiteMover):
                 self.prepareReport('MD5_MISMATCH', report)
                 return error.ERR_GETMD5MISMATCH, pilotErrorDiag
 
-        updateFileState(lfn, workDir, jobId, mode="file_state", state="transferred", type="input")
+        updateFileState(lfn, workDir, jobId, mode="file_state", state="transferred", ftype="input")
         self.prepareReport('DONE', report)
         return 0, pilotErrorDiag
 
     def put_data(self, source, ddm_storage, fsize=0, fchecksum=0, dsname='', **pdict):
         """ Data transfer using rfcp - generic version
         It's not advisable to use this right now because there's no
-        easy way to register the srm space token if the file is 
+        easy way to register the srm space token if the file is
         copied with rfcp """
 
         error = PilotErrors()
@@ -355,7 +331,7 @@ class castorSvcClassSiteMover(SiteMover.SiteMover):
         lfn = pdict.get('lfn', '')
         guid = pdict.get('guid', '')
 
-        # get the DQ2 tracing report
+        # get the Rucio tracing report
         report = self.getStubTracingReport(pdict['report'], 'castorSVC', lfn, guid)
 
         pilotErrorDiag = "put_data does not work for this mover"

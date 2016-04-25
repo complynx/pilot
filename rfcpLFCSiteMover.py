@@ -33,33 +33,6 @@ class rfcpLFCSiteMover(SiteMover.SiteMover):
         """DPM/CASTOR specific space verification.
         There is no way at the moment to verify DPM/CASTOR space availability - check info system instead"""
         return 999999
-        
-    def addMD5sum(self, lfn, md5sum):
-        """ add md5sum to lfn """
-        if os.environ.has_key('LD_LIBRARY_PATH'):
-            tolog("LD_LIBRARY_PATH prior to lfc import: %s" % os.environ['LD_LIBRARY_PATH'])
-        else:
-            tolog("!!WARNING!!2999!! LD_LIBRARY_PATH not set prior to lfc import")
-        import lfc
-        os.environ['LFC_HOST'] = readpar('lfchost')
-        #    b="."
-        #    buffer = b.zfill(200)
-        #    ret = lfc.lfc_seterrbuf(buffer, len(buffer))
-        stat = lfc.lfc_filestatg()
-        exitcode = lfc.lfc_statg(lfn, "", stat)
-        if exitcode != 0:
-            #    print "error:",buffer
-            err_num = lfc.cvar.serrno
-            tolog("!!WARNING!!2999!! lfc.lfc_statg: %d %s" % (err_num, lfn))
-            return exitcode
-        exitcode = lfc.lfc_setfsizeg(stat.guid, stat.filesize, 'MD', md5sum)
-        if exitcode != 0:
-            #    print "error:",buffer
-            err_num = lfc.cvar.serrno
-            tolog("[Non-fatal] ERROR: lfc.lfc_setfsizeg: %d %s %s" % (err_num, lfn, md5sum))
-            return exitcode
-        tolog("Successfully set md5sum for %s" % (lfn))
-        return exitcode
 
     def get_data(self, gpfn, lfn, path, fsize=0, fchecksum=0, guid=0, **pdict):
         """
@@ -76,7 +49,7 @@ class rfcpLFCSiteMover(SiteMover.SiteMover):
         workDir = pdict.get('workDir', '')
         prodDBlockToken = pdict.get('access', '')
 
-        # get the DQ2 tracing report
+        # get the Rucio tracing report
         try:
             report = pdict['report']
         except:
@@ -122,7 +95,7 @@ class rfcpLFCSiteMover(SiteMover.SiteMover):
             if useCT:
                 directIn = False
                 tolog("Direct access mode is switched off (file will be transferred with the copy tool)")
-                updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="copy_to_scratch", type="input")
+                updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="copy_to_scratch", ftype="input")
             else:
                 # determine if the file is a root file according to its name
                 rootFile = self.isRootFileName(lfn)
@@ -130,27 +103,22 @@ class rfcpLFCSiteMover(SiteMover.SiteMover):
                 if prodDBlockToken == 'local' or not rootFile:
                     directIn = False
                     tolog("Direct access mode has been switched off for this file (will be transferred with the copy tool)")
-                    updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="copy_to_scratch", type="input")
+                    updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="copy_to_scratch", ftype="input")
                 elif rootFile:
                     tolog("Found root file according to file name: %s (will not be transferred in direct reading mode)" % (lfn))
                     report['relativeStart'] = None
                     report['transferStart'] = None
                     self.prepareReport('FOUND_ROOT', report)
                     if useFileStager:
-                        updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="file_stager", type="input")
+                        updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="file_stager", ftype="input")
                     else:
-                        updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="remote_io", type="input")
+                        updateFileState(lfn, workDir, jobId, mode="transfer_mode", state="remote_io", ftype="input")
                     return error.ERR_DIRECTIOFILE, pilotErrorDiag
                 else:
                     tolog("Normal file transfer")
 
         dest_path = os.path.join(path, lfn)
-        #PN
         _cmd_str = '%srfcp %s %s' % (_setup_str, loc_pfn, dest_path)
-#        if ".lib." in loc_pfn:
-#            _cmd_str = '%srfcp %s %s' % (_setup_str, loc_pfn, dest_path)
-#        else:
-#            _cmd_str = '%srfcpXXX %s %s' % (_setup_str, loc_pfn, dest_path)
         tolog("Executing command: %s" % (_cmd_str))
         report['transferStart'] = time()
 
@@ -223,7 +191,7 @@ class rfcpLFCSiteMover(SiteMover.SiteMover):
         else:
             csumtype = "default"
 
-        # get remote file size and checksum 
+        # get remote file size and checksum
         ec, pilotErrorDiag, dstfsize, dstfchecksum = self.getLocalFileInfo(dest_path, csumtype=csumtype)
         if ec != 0:
             self.prepareReport('LOCAL_FILE_INFO_FAIL', report)
@@ -235,7 +203,7 @@ class rfcpLFCSiteMover(SiteMover.SiteMover):
 
             return ec, pilotErrorDiag
 
-        # get remote file size and checksum 
+        # get remote file size and checksum
         if dstfsize != fsize:
             pilotErrorDiag = "Remote and local file sizes do not match for %s (%s != %s)" %\
                              (os.path.basename(gpfn), str(dstfsize), str(fsize))
@@ -267,14 +235,14 @@ class rfcpLFCSiteMover(SiteMover.SiteMover):
                 self.prepareReport('MD5_MISMATCH', report)
                 return error.ERR_GETMD5MISMATCH, pilotErrorDiag
 
-        updateFileState(lfn, workDir, jobId, mode="file_state", state="transferred", type="input")
+        updateFileState(lfn, workDir, jobId, mode="file_state", state="transferred", ftype="input")
         self.prepareReport('DONE', report)
         return 0, pilotErrorDiag
 
     def put_data(self, source, ddm_storage, fsize=0, fchecksum=0, dsname='', **pdict):
         """ Data transfer using rfcp - generic version
         It's not advisable to use this right now because there's no
-        easy way to register the srm space token if the file is 
+        easy way to register the srm space token if the file is
         copied with rfcp"""
 
         error = PilotErrors()
@@ -294,14 +262,14 @@ class rfcpLFCSiteMover(SiteMover.SiteMover):
         else:
             _setup_str = ''
 
-        # get the DQ2 tracing report
+        # get the Rucio tracing report
         try:
             report = pdict['report']
         except:
             report = {}
         else:
             # set the proper protocol
-            report['protocol'] = 'rfpLFC'
+            report['protocol'] = 'rfcpLFC'
             # mark the relative start
             report['relativeStart'] = time()
             # the current file
@@ -357,7 +325,7 @@ class rfcpLFCSiteMover(SiteMover.SiteMover):
         else:
             _sentries = dst_se.split('/', 3)
             dst_serv = _sentries[0] + '//' + _sentries[2] # 'method://host:port' is it always a ftp server? can it be srm? something else?
-            dst_host = _sentries[2] #host and port            
+            dst_host = _sentries[2] #host and port
             dst_loc_se = '/' + _sentries[3]
             dst_prefix = dst_serv
 
@@ -366,7 +334,7 @@ class rfcpLFCSiteMover(SiteMover.SiteMover):
         # Behavior as in BNL: user files have no dsname automatically added to dir name
         m = re.search('^user', filename)
         if m:
-             dsname = ''           
+             dsname = ''
 
         dst_loc_sedir = os.path.join(dst_loc_se, os.path.join(extradirs, dsname))
         copyprefix = readpar('copyprefix')
@@ -380,14 +348,14 @@ class rfcpLFCSiteMover(SiteMover.SiteMover):
         dst_loc_pfn = os.path.join(dst_loc_sedir, filename)
         dst_gpfn = dst_prefix + dst_loc_pfn
 
-        # get the DQ2 site name from ToA
+        # get the RSE from ToA
         try:
-            _dq2SiteName = self.getDQ2SiteName(surl=dst_gpfn)
+            _RSE = self.getRSE(surl=dst_gpfn)
         except Exception, e:
-            tolog("Warning: Failed to get the DQ2 site name: %s (can not add this info to tracing report)" % str(e))
+            tolog("Warning: Failed to get RSE: %s (can not add this info to tracing report)" % str(e))
         else:
-            report['localSite'], report['remoteSite'] = (_dq2SiteName, _dq2SiteName)
-            tolog("DQ2 site name: %s" % (_dq2SiteName))
+            report['localSite'], report['remoteSite'] = (_RSE, _RSE)
+            tolog("RSE: %s" % (_RSE))
 
         try:
             self.mkdirWperm(dst_loc_sedir)
