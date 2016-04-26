@@ -89,7 +89,9 @@ class Pilot:
             c.setopt(c.WRITEFUNCTION, buf.write)
             c.perform()
             c.close()
-            queuedata = json.load(buf)
+            str = buf.getvalue()
+            self.logger.info("got from server: "+str)
+            queuedata = json.loads(str)
             buf.close()
 
         # curl --connect-timeout 20 --max-time 120 --cacert /tmp/x509up_u500 -sS \"http://pandaserver.cern.ch:25085/cache/schedconfig/ANALY_RRC-KI-HPC.all.json\" > /home/apf/dan_minipilot/queuedata.json
