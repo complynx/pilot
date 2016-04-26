@@ -89,6 +89,7 @@ class Pilot:
             c.setopt(c.WRITEFUNCTION, buf.write)
             c.perform()
             c.close()
+            self.logger.info("got from server: "+buf.getvalue())
             queuedata = json.load(buf)
             buf.close()
 
