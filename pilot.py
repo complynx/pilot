@@ -83,10 +83,10 @@ class Pilot:
         if queuedata is None:
             buf = StringIO()
             c = self.create_curl()
-            c.setopt(c.WRITEDATA, buf)
             c.setopt(c.URL, "http://%s:%d/cache/schedconfig/%s.all.json" % (self.args.pandaserver,
                                                                             self.args['pandaserver-port'],
                                                                             self.args.queue))
+            c.setopt(c.WRITEDATA, buf)
             c.perform()
             c.close()
             queuedata = json.load(buf)
