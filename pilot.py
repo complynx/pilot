@@ -132,11 +132,10 @@ class Pilot:
 
         buf = StringIO()
         c = self.create_curl()
-        c.setopt(c.URL, "http://%s:%d/server/panda/getJob" % (self.args.jobserver,
-                                                              self.args.jobserver_port))
+        c.setopt(c.URL, "https://%s:%d/server/panda/getJob" % (self.args.jobserver,
+                                                               self.args.jobserver_port))
         c.setopt(c.WRITEFUNCTION, buf.write)
         c.setopt(c.POSTFIELDS, urllib.urlencode(data))
-        c.setopt(c.SSLENGINE_DEFAULT, 1)
         c.perform()
         c.close()
         self.logger.info("got from server: "+buf.getvalue())
