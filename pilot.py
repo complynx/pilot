@@ -144,7 +144,7 @@ class Pilot:
         if self.sslPath != "":
             c.setopt(c.CAPATH, self.sslPath)
         c.setopt(c.SSL_VERIFYPEER, False)
-        c.setopt(c.USE_SSL, True)
+        # c.setopt(c.USE_SSL, True)
         c.perform()
         c.close()
         self.logger.info("got from server: "+buf.getvalue())
