@@ -8,6 +8,9 @@ import argparse
 import pycurl
 from StringIO import StringIO
 import json
+import cpuinfo
+import urllib
+import psutil
 
 class Pilot:
     """ Main class """
@@ -91,6 +94,30 @@ class Pilot:
             c.close()
             queuedata = json.loads(buf.getvalue())
             buf.close()
+
+        self.logger.info("queuedata found: "+json.dumps(queuedata, indent=4))
+
+    def get_job(self):
+        job = None
+
+        cpuInfo = cpuinfo.get_cpu_info()
+        memInfo = psutil.virtual_memory()
+
+        data = {
+            'cpu': cpuInfo['hz_actual_raw']/1000000,
+            'mem': memInfo.total/1024/1024
+        }
+
+        buf = StringIO()
+        c = self.create_curl()
+        c.setopt(c.URL, "http://%s:%d/cache/schedconfig/%s.all.json" % (self.args.pandaserver,
+                                                                        self.args.pandaserver_port,
+                                                                        self.args.queue))
+        c.setopt(c.WRITEFUNCTION, buf.write)
+        c.perform()
+        c.close()
+        queuedata = json.loads(buf.getvalue())
+        buf.close()
 
         self.logger.info("queuedata found: "+json.dumps(queuedata, indent=4))
 
