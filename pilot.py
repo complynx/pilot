@@ -33,9 +33,16 @@ class Pilot:
         self.argParser.add_argument("--pandaserver", default="pandaserver.cern.ch",
                                     help="Panda server web address.",
                                     metavar="panda.example.com")
+        self.argParser.add_argument("--jobserver", default="aipanda007.cern.ch",
+                                    help="Panda job server web address.",
+                                    metavar="pandajob.example.com")
         self.argParser.add_argument("--pandaserver_port", default=25085,
                                     type=int,
                                     help="Panda server port.",
+                                    metavar="PORT")
+        self.argParser.add_argument("--jobserver_port", default=25443,
+                                    type=int,
+                                    help="Panda job server port.",
                                     metavar="PORT")
 
         testqueuedata = "queuedata.json" if os.path.isfile("queuedata.json") else ""
@@ -125,9 +132,8 @@ class Pilot:
 
         buf = StringIO()
         c = self.create_curl()
-        c.setopt(c.URL, "http://%s:%d/cache/schedconfig/%s.all.json" % (self.args.pandaserver,
-                                                                        self.args.pandaserver_port,
-                                                                        self.args.queue))
+        c.setopt(c.URL, "http://%s:%d/server/panda/getJob" % (self.args.jobserver,
+                                                              self.args.jobserver_port))
         c.setopt(c.WRITEFUNCTION, buf.write)
         c.setopt(c.POSTFIELDS, urllib.urlencode(data))
         c.perform()
