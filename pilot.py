@@ -112,7 +112,7 @@ class Pilot:
             nodeName = os.environ.get("_CONDOR_SLOT", '')+"@"+nodeName
 
         data = {
-            'cpu': float(cpuInfo['hz_actual_raw'])/1000000.,
+            'cpu': float(cpuInfo['hz_actual_raw'][0])/1000000.,
             'mem': float(memInfo.total)/1024./1024.,
             'node': nodeName,
             'diskSpace': diskSpace,
