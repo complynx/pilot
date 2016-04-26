@@ -95,7 +95,7 @@ class Pilot:
             buf.close()
 
         # curl --connect-timeout 20 --max-time 120 --cacert /tmp/x509up_u500 -sS \"http://pandaserver.cern.ch:25085/cache/schedconfig/ANALY_RRC-KI-HPC.all.json\" > /home/apf/dan_minipilot/queuedata.json
-        self.logger.info("queuedata found: "+json.dumps(queuedata, ident=4))
+        self.logger.info("queuedata found: "+json.dumps(queuedata, indent=4))
 
 
 # main
