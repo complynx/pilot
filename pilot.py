@@ -29,7 +29,7 @@ class Pilot:
         self.argParser.add_argument("--pandaserver", default="pandaserver.cern.ch",
                                     help="Panda server web address.",
                                     metavar="panda.example.com")
-        self.argParser.add_argument("--pandaserver-port", default=25085,
+        self.argParser.add_argument("--pandaserver_port", default=25085,
                                     type=int,
                                     help="Panda server port.",
                                     metavar="PORT")
@@ -84,7 +84,7 @@ class Pilot:
             buf = StringIO()
             c = self.create_curl()
             c.setopt(c.URL, "http://%s:%d/cache/schedconfig/%s.all.json" % (self.args.pandaserver,
-                                                                            self.args['pandaserver-port'],
+                                                                            self.args.pandaserver_port,
                                                                             self.args.queue))
             c.setopt(c.WRITEDATA, buf)
             c.perform()
