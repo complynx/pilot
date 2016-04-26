@@ -11,6 +11,7 @@ import json
 import cpuinfo
 import urllib
 import psutil
+import socket
 
 class Pilot:
     """ Main class """
@@ -66,6 +67,7 @@ class Pilot:
         self.logger = logging.getLogger("pilot")
         self.logger.info("Pilot running")
         self.get_queuedata()
+        self.get_job()
 
     def create_curl(self):
         c = pycurl.Curl()
@@ -102,10 +104,23 @@ class Pilot:
 
         cpuInfo = cpuinfo.get_cpu_info()
         memInfo = psutil.virtual_memory()
+        nodeName = socket.gethostbyaddr(socket.gethostname())[0]
+        diskSpace = float(psutil.disk_usage(".").total)/1024./1024.
+        # diskSpace = min(diskSpace, 14336)  # I doubt this is necessary, so RM
+
+        if "_CONDOR_SLOT" in os.environ:
+            nodeName = os.environ.get("_CONDOR_SLOT", '')+"@"+nodeName
 
         data = {
-            'cpu': cpuInfo['hz_actual_raw']/1000000,
-            'mem': memInfo.total/1024/1024
+            'cpu': float(cpuInfo['hz_actual_raw'])/1000000.,
+            'mem': float(memInfo.total)/1024./1024.,
+            'node': nodeName,
+            'diskSpace': diskSpace,
+            'getProxyKey': False,  # do we need it?
+            'computingElement': self.args.queue,
+            'siteName': self.args.queue,
+            'workingGroup': '',  # do we need it?
+            'prodSourceLabel': 'user'
         }
 
         buf = StringIO()
@@ -114,12 +129,11 @@ class Pilot:
                                                                         self.args.pandaserver_port,
                                                                         self.args.queue))
         c.setopt(c.WRITEFUNCTION, buf.write)
+        c.setopt(c.POSTFIELDS, urllib.urlencode(data))
         c.perform()
         c.close()
-        queuedata = json.loads(buf.getvalue())
+        self.logger.info("got from server: "+buf.getvalue())
         buf.close()
-
-        self.logger.info("queuedata found: "+json.dumps(queuedata, indent=4))
 
 
 # main
