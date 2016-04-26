@@ -136,6 +136,15 @@ class Pilot:
                                                                self.args.jobserver_port))
         c.setopt(c.WRITEFUNCTION, buf.write)
         c.setopt(c.POSTFIELDS, urllib.urlencode(data))
+        # c.setopt(c.COMPRESS, True)
+        c.setopt(c.SSL_VERIFYPEER, False)
+        if self.sslCert != "":
+            c.setopt(c.SSLCERT, self.sslCert)
+            c.setopt(c.SSLKEY, self.sslCert)
+        if self.sslPath != "":
+            c.setopt(c.CAPATH, self.sslPath)
+        c.setopt(c.SSL_VERIFYPEER, False)
+        c.setopt(c.USE_SSL, True)
         c.perform()
         c.close()
         self.logger.info("got from server: "+buf.getvalue())
