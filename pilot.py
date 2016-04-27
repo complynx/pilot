@@ -13,6 +13,7 @@ import urllib
 import urlparse
 import psutil
 import socket
+import re
 
 class Pilot:
     """ Main class """
@@ -54,14 +55,26 @@ class Pilot:
         self.argParser.add_argument("--queue", default='',
                                     help="Queue name",
                                     metavar="QUEUE_NAME")
-        self.argParser.add_argument("--job_tag", default='',
+        self.argParser.add_argument("--job_tag", default='prod',
                                     help="Job type tag. Eg. test, user, prod, etc...",
+                                    metavar="tag")
+        self.argParser.add_argument("--job_description", default=None,
+                                    type=lambda x: x if os.path.isfile(x) else None,
+                                    help="Job description file, preloaded from server. The contents must be "
+                                         "application/x-www-form-urlencoded string. Later may be JSON also.",
                                     metavar="tag")
 
         self.logger = logging.getLogger("pilot")
         self.sslCert = ""
         self.sslPath = ""
         self.sslCertOrPath = ""
+
+    @staticmethod
+    def parse_answer(string):
+        trimmed = string.strip()
+        if re.match("([\w-]+(=[\w-]*)?(&[\w-]+(=[\w-]*)?)*)?$", trimmed):  # is application/x-www-form-urlencoded
+            return urlparse.parse_qs(trimmed, True)
+        return json.loads(trimmed)
 
     def test_certificate_info(self):
         if os.path.exists(self.args.cacert):
@@ -93,8 +106,8 @@ class Pilot:
         if self.args.queuedata != "":
             with open(self.args.queuedata) as f:
                 try:
-                    queuedata = json.load(f)
-                except ValueError:
+                    queuedata = self.parse_answer(f.read())
+                except:
                     pass
         if queuedata is None:
             buf = StringIO()
@@ -105,56 +118,63 @@ class Pilot:
             c.setopt(c.WRITEFUNCTION, buf.write)
             c.perform()
             c.close()
-            queuedata = json.loads(buf.getvalue())
+            queuedata = self.parse_answer(buf.getvalue())
             buf.close()
 
         self.logger.info("queuedata found: "+json.dumps(queuedata, indent=4))
 
     def get_job(self):
-        job = None
+        jobDesc = None
+        if self.args.job_description is not None:
+            with open(self.args.job_description) as f:
+                try:
+                    jobDesc = self.parse_answer(f.read())
+                except:
+                    pass
+        if jobDesc is None:
 
-        cpuInfo = cpuinfo.get_cpu_info()
-        memInfo = psutil.virtual_memory()
-        nodeName = socket.gethostbyaddr(socket.gethostname())[0]
-        diskSpace = float(psutil.disk_usage(".").total)/1024./1024.
-        # diskSpace = min(diskSpace, 14336)  # I doubt this is necessary, so RM
+            cpuInfo = cpuinfo.get_cpu_info()
+            memInfo = psutil.virtual_memory()
+            nodeName = socket.gethostbyaddr(socket.gethostname())[0]
+            diskSpace = float(psutil.disk_usage(".").total)/1024./1024.
+            # diskSpace = min(diskSpace, 14336)  # I doubt this is necessary, so RM
 
-        if "_CONDOR_SLOT" in os.environ:
-            nodeName = os.environ.get("_CONDOR_SLOT", '')+"@"+nodeName
+            if "_CONDOR_SLOT" in os.environ:
+                nodeName = os.environ.get("_CONDOR_SLOT", '')+"@"+nodeName
 
-        data = {
-            'cpu': float(cpuInfo['hz_actual_raw'][0])/1000000.,
-            'mem': float(memInfo.total)/1024./1024.,
-            'node': nodeName,
-            'diskSpace': diskSpace,
-            'getProxyKey': False,  # do we need it?
-            'computingElement': self.args.queue,
-            'siteName': self.args.queue,
-            'workingGroup': '',  # do we need it?
-            'prodSourceLabel': self.args.job_tag
-        }
+            data = {
+                'cpu': float(cpuInfo['hz_actual_raw'][0])/1000000.,
+                'mem': float(memInfo.total)/1024./1024.,
+                'node': nodeName,
+                'diskSpace': diskSpace,
+                'getProxyKey': False,  # do we need it?
+                'computingElement': self.args.queue,
+                'siteName': self.args.queue,
+                'workingGroup': '',  # do we need it?
+                'prodSourceLabel': self.args.job_tag
+            }
 
-        buf = StringIO()
-        c = self.create_curl()
-        c.setopt(c.URL, "https://%s:%d/server/panda/getJob" % (self.args.jobserver,
-                                                               self.args.jobserver_port))
-        c.setopt(c.WRITEFUNCTION, buf.write)
-        c.setopt(c.POSTFIELDS, urllib.urlencode(data))
-        # c.setopt(c.COMPRESS, True)
-        c.setopt(c.SSL_VERIFYPEER, False)
-        if self.sslCert != "":
-            c.setopt(c.SSLCERT, self.sslCert)
-            c.setopt(c.SSLKEY, self.sslCert)
-        if self.sslPath != "":
-            c.setopt(c.CAPATH, self.sslPath)
-        c.setopt(c.SSL_VERIFYPEER, False)
-        # c.setopt(c.USE_SSL, True)
-        c.perform()
-        c.close()
-        jobDesc = urlparse.parse_qs(buf.getvalue(), True)
-        buf.close()
+            buf = StringIO()
+            c = self.create_curl()
+            c.setopt(c.URL, "https://%s:%d/server/panda/getJob" % (self.args.jobserver,
+                                                                   self.args.jobserver_port))
+            c.setopt(c.WRITEFUNCTION, buf.write)
+            c.setopt(c.POSTFIELDS, urllib.urlencode(data))
+            # c.setopt(c.COMPRESS, True)
+            c.setopt(c.SSL_VERIFYPEER, False)
+            if self.sslCert != "":
+                c.setopt(c.SSLCERT, self.sslCert)
+                c.setopt(c.SSLKEY, self.sslCert)
+            if self.sslPath != "":
+                c.setopt(c.CAPATH, self.sslPath)
+            c.setopt(c.SSL_VERIFYPEER, False)
+            # c.setopt(c.USE_SSL, True)
+            c.perform()
+            c.close()
+            jobDesc = self.parse_answer(buf.getvalue())
+            buf.close()
 
-        self.logger.info("got from server: "+json.dumps(jobDesc))
+        self.logger.info("got job description: "+json.dumps(jobDesc))
 
 
 # main
