@@ -71,11 +71,11 @@ class Pilot:
 
     # @staticmethod
     def parse_answer(self, string):
-        trimmed = string.strip()
+        trimmed = string.strip(" \n\t\r")
         self.logger.debug(re.search("^([\w-]+(=[\w-]*)?(&[\w-]+(=[\w-]*)?)*)?$", trimmed))
         if re.match("^([\w-]+(=[\w-]*)?(&[\w-]+(=[\w-]*)?)*)?$", trimmed):  # is application/x-www-form-urlencoded
             return urlparse.parse_qs(trimmed, True)
-        return json.loads(trimmed)
+        return json.loads(string)
 
     def test_certificate_info(self):
         if os.path.exists(self.args.cacert):
@@ -129,9 +129,7 @@ class Pilot:
         if self.args.job_description is not None:
             with open(self.args.job_description) as f:
                 try:
-                    str = f.read()
-                    self.logger.info("file contents: "+str)
-                    jobDesc = self.parse_answer(str)
+                    jobDesc = self.parse_answer(f.read())
                 except:
                     pass
         if jobDesc is None:
