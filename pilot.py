@@ -121,7 +121,7 @@ class Pilot:
         if self.args.job_description is not None:
             with open(self.args.job_description) as f:
                 try:
-                    jobDesc = urlparse.parse_qs(f.read().split(" \n\r\t"), True)
+                    jobDesc = urlparse.parse_qs(f.read().strip(" \n\r\t"), True)
                 except:
                     pass
         if jobDesc is None:
@@ -164,7 +164,7 @@ class Pilot:
             # c.setopt(c.USE_SSL, True)
             c.perform()
             c.close()
-            jobDesc = urlparse.parse_qs(str(buf.getvalue()).split(" \n\r\t"), True)
+            jobDesc = urlparse.parse_qs(str(buf.getvalue()).strip(" \n\r\t"), True)
             buf.close()
 
         self.logger.debug("got job description: "+json.dumps(jobDesc))
