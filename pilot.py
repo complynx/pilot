@@ -72,6 +72,7 @@ class Pilot:
     # @staticmethod
     def parse_answer(self, string):
         trimmed = string.strip(" \n\t\r")
+        self.logger.debug(trimmed)
         self.logger.debug(re.search("^([\w-]+(=[\w-]*)?(&[\w-]+(=[\w-]*)?)*)?$", trimmed))
         if re.match("^([\w-]+(=[\w-]*)?(&[\w-]+(=[\w-]*)?)*)?$", trimmed):  # is application/x-www-form-urlencoded
             return urlparse.parse_qs(trimmed, True)
