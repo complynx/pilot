@@ -127,7 +127,7 @@ class Pilot:
             'computingElement': self.args.queue,
             'siteName': self.args.queue,
             'workingGroup': '',  # do we need it?
-            'prodSourceLabel': 'user'
+            'prodSourceLabel': 'ptest'
         }
 
         buf = StringIO()
