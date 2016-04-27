@@ -175,6 +175,11 @@ class Pilot:
             jobDesc = urlparse.parse_qs(str(buf.getvalue()).strip(" \n\r\t"), True)
             buf.close()
 
+        # now reduce arrays
+        for k, v in jobDesc:
+            if len(v) == 1:
+                jobDesc[k] = v[0]
+
         self.logger.debug("got job description: "+json.dumps(jobDesc, indent=4))
 
 
