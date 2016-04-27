@@ -15,6 +15,7 @@ import psutil
 import socket
 import re
 
+
 class Pilot:
     """ Main class """
 
@@ -68,6 +69,7 @@ class Pilot:
         self.sslCert = ""
         self.sslPath = ""
         self.sslCertOrPath = ""
+        self.args = None
 
     def test_certificate_info(self):
         if os.path.exists(self.args.cacert):
