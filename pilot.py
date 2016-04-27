@@ -176,9 +176,9 @@ class Pilot:
             buf.close()
 
         # now reduce arrays
-        for k, v in jobDesc:
-            if len(v) == 1:
-                jobDesc[k] = v[0]
+        for k in jobDesc:
+            if len(jobDesc[k]) == 1:
+                jobDesc[k] = jobDesc[k][0]
 
         self.logger.debug("got job description: "+json.dumps(jobDesc, indent=4))
 
