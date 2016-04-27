@@ -53,6 +53,9 @@ class Pilot:
         self.argParser.add_argument("--queue", default='',
                                     help="Queue name",
                                     metavar="QUEUE_NAME")
+        self.argParser.add_argument("--job_tag", default='',
+                                    help="Job type tag. Eg. test, user, prod, etc...",
+                                    metavar="tag")
 
         self.logger = logging.getLogger("pilot")
         self.sslCert = ""
@@ -127,7 +130,7 @@ class Pilot:
             'computingElement': self.args.queue,
             'siteName': self.args.queue,
             'workingGroup': '',  # do we need it?
-            'prodSourceLabel': 'ptest'
+            'prodSourceLabel': self.args.job_tag
         }
 
         buf = StringIO()
