@@ -69,15 +69,6 @@ class Pilot:
         self.sslPath = ""
         self.sslCertOrPath = ""
 
-    # @staticmethod
-    def parse_answer(self, string):
-        trimmed = string.strip(" \n\t\r")
-        self.logger.debug(trimmed)
-        self.logger.debug(re.search("^([\w-]+(=[\w-]*)?(&[\w-]+(=[\w-]*)?)*)?$", trimmed))
-        if re.match("^([\w-]+(=[\w-]*)?(&[\w-]+(=[\w-]*)?)*)?$", trimmed):  # is application/x-www-form-urlencoded
-            return urlparse.parse_qs(trimmed, True)
-        return json.loads(string)
-
     def test_certificate_info(self):
         if os.path.exists(self.args.cacert):
             self.sslCert = self.args.cacert
@@ -108,7 +99,7 @@ class Pilot:
         if self.args.queuedata != "":
             with open(self.args.queuedata) as f:
                 try:
-                    queuedata = self.parse_answer(f.read())
+                    queuedata = json.load(f)
                 except:
                     pass
         if queuedata is None:
@@ -120,7 +111,7 @@ class Pilot:
             c.setopt(c.WRITEFUNCTION, buf.write)
             c.perform()
             c.close()
-            queuedata = self.parse_answer(buf.getvalue())
+            queuedata = json.loads(buf.getvalue())
             buf.close()
 
         self.logger.debug("queuedata found: "+json.dumps(queuedata, indent=4))
@@ -130,7 +121,7 @@ class Pilot:
         if self.args.job_description is not None:
             with open(self.args.job_description) as f:
                 try:
-                    jobDesc = self.parse_answer(f.read())
+                    jobDesc = urlparse.parse_qs(f.read().split(" \n\r\t"), True)
                 except:
                     pass
         if jobDesc is None:
@@ -173,7 +164,7 @@ class Pilot:
             # c.setopt(c.USE_SSL, True)
             c.perform()
             c.close()
-            jobDesc = self.parse_answer(buf.getvalue())
+            jobDesc = urlparse.parse_qs(buf.getvalue().split(" \n\r\t"), True)
             buf.close()
 
         self.logger.debug("got job description: "+json.dumps(jobDesc))
