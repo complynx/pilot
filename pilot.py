@@ -164,7 +164,7 @@ class Pilot:
             # c.setopt(c.USE_SSL, True)
             c.perform()
             c.close()
-            jobDesc = urlparse.parse_qs(buf.getvalue().split(" \n\r\t"), True)
+            jobDesc = urlparse.parse_qs(str(buf.getvalue()).split(" \n\r\t"), True)
             buf.close()
 
         self.logger.debug("got job description: "+json.dumps(jobDesc))
