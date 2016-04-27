@@ -10,6 +10,7 @@ from StringIO import StringIO
 import json
 import cpuinfo
 import urllib
+import urlparse
 import psutil
 import socket
 
@@ -150,8 +151,10 @@ class Pilot:
         # c.setopt(c.USE_SSL, True)
         c.perform()
         c.close()
-        self.logger.info("got from server: "+buf.getvalue())
+        jobDesc = urlparse.parse_qs(buf.getvalue(), True)
         buf.close()
+
+        self.logger.info("got from server: "+json.dumps(jobDesc))
 
 
 # main
