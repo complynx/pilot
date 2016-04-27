@@ -128,7 +128,9 @@ class Pilot:
         if self.args.job_description is not None:
             with open(self.args.job_description) as f:
                 try:
-                    jobDesc = self.parse_answer(f.read())
+                    str = f.read()
+                    self.logger.info("file contents: "+str)
+                    jobDesc = self.parse_answer(str)
                 except:
                     pass
         if jobDesc is None:
