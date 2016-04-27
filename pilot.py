@@ -97,12 +97,17 @@ class Pilot:
     def get_queuedata(self):
         queuedata = None
         if self.args.queuedata != "":
+            self.logger.info("Trying to fetch queuedata from local file %s." % self.args.queuedata)
             with open(self.args.queuedata) as f:
                 try:
                     queuedata = json.load(f)
+                    self.logger.info("Successfully loaded file and parsed.")
                 except:
+                    self.logger.warinig("File loading and parsing failed.")
                     pass
         if queuedata is None:
+            self.logger.info("Queuedata is not saved locally. Asking server.")
+
             buf = StringIO()
             c = self.create_curl()
             c.setopt(c.URL, "http://%s:%d/cache/schedconfig/%s.all.json" % (self.args.pandaserver,
@@ -114,18 +119,21 @@ class Pilot:
             queuedata = json.loads(buf.getvalue())
             buf.close()
 
-        self.logger.debug("queuedata found: "+json.dumps(queuedata, indent=4))
+        self.logger.info("queuedata found.")
+        # self.logger.debug("queuedata: "+json.dumps(queuedata, indent=4))
 
     def get_job(self):
         jobDesc = None
         if self.args.job_description is not None:
+            self.logger.info("Trying to fetch job description from local file %s." % self.args.job_description)
             with open(self.args.job_description) as f:
                 try:
                     jobDesc = urlparse.parse_qs(f.read().strip(" \n\r\t"), True)
+                    self.logger.info("Successfully loaded file and parsed.")
                 except:
+                    self.logger.warinig("File loading and parsing failed.")
                     pass
         if jobDesc is None:
-
             cpuInfo = cpuinfo.get_cpu_info()
             memInfo = psutil.virtual_memory()
             nodeName = socket.gethostbyaddr(socket.gethostname())[0]
@@ -167,7 +175,7 @@ class Pilot:
             jobDesc = urlparse.parse_qs(str(buf.getvalue()).strip(" \n\r\t"), True)
             buf.close()
 
-        self.logger.debug("got job description: "+json.dumps(jobDesc))
+        self.logger.debug("got job description: "+json.dumps(jobDesc, indent=4))
 
 
 # main
