@@ -69,10 +69,11 @@ class Pilot:
         self.sslPath = ""
         self.sslCertOrPath = ""
 
-    @staticmethod
-    def parse_answer(string):
+    # @staticmethod
+    def parse_answer(self, string):
         trimmed = string.strip()
-        if re.match("([\w-]+(=[\w-]*)?(&[\w-]+(=[\w-]*)?)*)?$", trimmed):  # is application/x-www-form-urlencoded
+        self.logger.debug(re.search("^([\w-]+(=[\w-]*)?(&[\w-]+(=[\w-]*)?)*)?$", trimmed))
+        if re.match("^([\w-]+(=[\w-]*)?(&[\w-]+(=[\w-]*)?)*)?$", trimmed):  # is application/x-www-form-urlencoded
             return urlparse.parse_qs(trimmed, True)
         return json.loads(trimmed)
 
@@ -121,7 +122,7 @@ class Pilot:
             queuedata = self.parse_answer(buf.getvalue())
             buf.close()
 
-        self.logger.info("queuedata found: "+json.dumps(queuedata, indent=4))
+        self.logger.debug("queuedata found: "+json.dumps(queuedata, indent=4))
 
     def get_job(self):
         jobDesc = None
@@ -176,7 +177,7 @@ class Pilot:
             jobDesc = self.parse_answer(buf.getvalue())
             buf.close()
 
-        self.logger.info("got job description: "+json.dumps(jobDesc))
+        self.logger.debug("got job description: "+json.dumps(jobDesc))
 
 
 # main
