@@ -15,6 +15,7 @@ import psutil
 import socket
 import re
 import platform
+import pip
 
 
 class Pilot:
@@ -93,6 +94,14 @@ class Pilot:
         self.logger = logging.getLogger("pilot")
         self.logger.info("Pilot running")
         self.logger.info("User-Agent: " + self.user_agent)
+
+        r = pip.req.parse_requirements(os.path.join(os.path.dirname(os.path.realpath(__file__)), "requirements.txt"),
+                                       session=False)
+
+        self.logger.info("Testing requirements.")
+        for req in r:
+            self.logger.info("Requirement: %s (%s)" % (req.name, req.installed_version))
+
         self.get_queuedata()
         self.get_job()
 
