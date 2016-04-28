@@ -16,6 +16,8 @@ import socket
 import re
 import platform
 import pip
+import time
+import commands
 
 
 class Pilot:
@@ -81,6 +83,12 @@ class Pilot:
                            (sys.version.split(" ")[0],
                             platform.system(), platform.machine())
 
+        self.node_name = socket.gethostbyaddr(socket.gethostname())[0]
+        if "_CONDOR_SLOT" in os.environ:
+            self.node_name = os.environ.get("_CONDOR_SLOT", '')+"@"+self.node_name
+
+        self.pilot_id = self.node_name+(":%d" % os.getpid())
+
     def test_certificate_info(self):
         if os.path.exists(self.args.cacert):
             self.sslCert = self.args.cacert
@@ -95,8 +103,8 @@ class Pilot:
             self.logger.info("Started with arguments %s" % vars(self.args))
         self.logger.info("User-Agent: " + self.user_agent)
 
-        self.logger.info("Pilot is started from %s." % self.dir)
-        self.logger.info("Working directory is %s." % os.getcwd())
+        self.logger.info("Pilot is started from %s" % self.dir)
+        self.logger.info("Working directory is %s" % os.getcwd())
 
         self.logger.info("Testing requirements...")
         requirements = pip.req.parse_requirements(os.path.join(self.dir,
@@ -113,7 +121,57 @@ class Pilot:
         self.print_initial_information()
 
         self.get_queuedata()
-        self.get_job()
+        job_desc = self.get_job()
+
+    @staticmethod
+    def time_stamp():
+        """ return ISO-8601 compliant date/time format """
+
+        tmptz = time.timezone
+        if tmptz > 0:
+            signstr = '-'
+        else:
+            signstr = '+'
+        tmptz_hours = int(tmptz/3600)
+
+        return str("%s%s%02d%02d" % (time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()), signstr, tmptz_hours, int(tmptz/60-tmptz_hours*60)))
+
+    def send_job_state(self,job_desc,state):
+        data = {
+            'node': self.node_name,
+            'state': state,
+            'jobId': job_desc["PandaID"],
+            'pilotID': self.pilot_id,
+            'timestamp': self.time_stamp(),
+            'workdir': os.getcwd()
+        }
+
+        buf = StringIO()
+        c = self.create_curl()
+        c.setopt(c.URL, "https://%s:%d/server/panda/updateJob" % (self.args.jobserver,
+                                                                  self.args.jobserver_port))
+        c.setopt(c.WRITEFUNCTION, buf.write)
+        c.setopt(c.POSTFIELDS, urllib.urlencode(data))
+        c.setopt(c.SSL_VERIFYPEER, False)
+        if self.sslCert != "":
+            c.setopt(c.SSLCERT, self.sslCert)
+            c.setopt(c.SSLKEY, self.sslCert)
+        if self.sslPath != "":
+            c.setopt(c.CAPATH, self.sslPath)
+        c.setopt(c.SSL_VERIFYPEER, False)
+        c.perform()
+        c.close()
+        jobDesc = json.loads(buf.getvalue())
+        buf.close()
+        self.logger.info("Got from server: " % json.dumps(jobDesc, indent=4))
+
+    def run_job(self, job_desc):
+        self.send_job_state(job_desc, "starting")
+        self.send_job_state(job_desc, "running")
+        s, o = commands.getstatusoutput(job_desc["trfName"]+" "+job_desc["jobPars"])
+        self.logger.info("Job ended with status: %d" % s)
+        self.logger.info("Job output:\n%s" % o)
+        self.send_job_state(job_desc, "holding")
 
     def create_curl(self):
         c = pycurl.Curl()
@@ -151,7 +209,7 @@ class Pilot:
             queuedata = json.loads(buf.getvalue())
             buf.close()
 
-        self.logger.info("queuedata found.")
+        self.logger.info("Queuedata obtained.")
         # self.logger.debug("queuedata: "+json.dumps(queuedata, indent=4))
 
     def get_job(self):
@@ -168,18 +226,15 @@ class Pilot:
         if jobDesc is None:
             cpuInfo = cpuinfo.get_cpu_info()
             memInfo = psutil.virtual_memory()
-            nodeName = socket.gethostbyaddr(socket.gethostname())[0]
             diskSpace = float(psutil.disk_usage(".").total)/1024./1024.
             # diskSpace = min(diskSpace, 14336)  # I doubt this is necessary, so RM
-
-            if "_CONDOR_SLOT" in os.environ:
-                nodeName = os.environ.get("_CONDOR_SLOT", '')+"@"+nodeName
 
             data = {
                 'cpu': float(cpuInfo['hz_actual_raw'][0])/1000000.,
                 'mem': float(memInfo.total)/1024./1024.,
-                'node': nodeName,
+                'node': self.node_name,
                 'diskSpace': diskSpace,
+                'pilotID': self.pilot_id,
                 'getProxyKey': False,  # do we need it?
                 'computingElement': self.args.queue,
                 'siteName': self.args.queue,
@@ -206,7 +261,8 @@ class Pilot:
             buf.close()
 
         self.logger.info("Got job description.")
-        self.logger.debug("Job description: "+json.dumps(jobDesc, indent=4))
+        # self.logger.debug("Job description: "+json.dumps(jobDesc, indent=4)
+        return jobDesc
 
 
 # main
