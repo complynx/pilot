@@ -116,7 +116,7 @@ class Pilot:
                     queuedata = json.load(f)
                     self.logger.info("Successfully loaded file and parsed.")
                 except:
-                    self.logger.warinig("File loading and parsing failed.")
+                    self.logger.warning("File loading and parsing failed.")
                     pass
         if queuedata is None:
             self.logger.info("Queuedata is not saved locally. Asking server.")
@@ -144,7 +144,7 @@ class Pilot:
                     jobDesc = json.load(f)
                     self.logger.info("Successfully loaded file and parsed.")
                 except:
-                    self.logger.warinig("File loading and parsing failed.")
+                    self.logger.warnig("File loading and parsing failed.")
                     pass
         if jobDesc is None:
             cpuInfo = cpuinfo.get_cpu_info()
@@ -172,10 +172,8 @@ class Pilot:
             c = self.create_curl()
             c.setopt(c.URL, "https://%s:%d/server/panda/getJob" % (self.args.jobserver,
                                                                    self.args.jobserver_port))
-            # c.setopt(c.URL, "http://complynx.net/loopback.php")
             c.setopt(c.WRITEFUNCTION, buf.write)
             c.setopt(c.POSTFIELDS, urllib.urlencode(data))
-            # c.setopt(c.COMPRESS, True)
             c.setopt(c.SSL_VERIFYPEER, False)
             if self.sslCert != "":
                 c.setopt(c.SSLCERT, self.sslCert)
@@ -183,19 +181,13 @@ class Pilot:
             if self.sslPath != "":
                 c.setopt(c.CAPATH, self.sslPath)
             c.setopt(c.SSL_VERIFYPEER, False)
-            # c.setopt(c.USE_SSL, True)
             c.perform()
             c.close()
-            # self.logger.debug(str(buf.getvalue()))
             jobDesc = json.loads(buf.getvalue())
             buf.close()
 
-        # # now reduce arrays
-        # for k in jobDesc:
-        #     if len(jobDesc[k]) == 1:
-        #         jobDesc[k] = jobDesc[k][0]
-
-        self.logger.debug("got job description: "+json.dumps(jobDesc, indent=4))
+        self.logger.info("Got job description.")
+        self.logger.debug("Job description: "+json.dumps(jobDesc, indent=4))
 
 
 # main
