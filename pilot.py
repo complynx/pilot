@@ -14,10 +14,13 @@ import urlparse
 import psutil
 import socket
 import re
+import platform
 
 
 class Pilot:
     """ Main class """
+
+    user_agent = 'Pilot/2.0'
 
     def __init__(self):
         self.argParser = argparse.ArgumentParser(description="This is simplepilot. It will start your task... maybe..."
@@ -70,6 +73,10 @@ class Pilot:
         self.sslPath = ""
         self.sslCertOrPath = ""
         self.args = None
+        self.user_agent += " (Python %s; %s %s; rv:alpha) minipilot/daniel" % \
+                           (sys.version.split(" ")[0],
+                            platform.system(), platform.machine())
+
 
     def test_certificate_info(self):
         if os.path.exists(self.args.cacert):
@@ -85,6 +92,7 @@ class Pilot:
 
         self.logger = logging.getLogger("pilot")
         self.logger.info("Pilot running")
+        self.logger.info("User-Agent: " + self.user_agent)
         self.get_queuedata()
         self.get_job()
 
@@ -94,6 +102,7 @@ class Pilot:
             c.setopt(c.CAPATH, self.sslCertOrPath)
         c.setopt(c.CONNECTTIMEOUT, 20)
         c.setopt(c.TIMEOUT, 120)
+        c.setopt(c.HTTPHEADER, ["User-Agent: " + self.user_agent])
         return c
 
     def get_queuedata(self):
@@ -159,30 +168,33 @@ class Pilot:
 
             buf = StringIO()
             c = self.create_curl()
-            c.setopt(c.URL, "https://%s:%d/server/panda/getJob" % (self.args.jobserver,
-                                                                   self.args.jobserver_port))
+            # c.setopt(c.URL, "https://%s:%d/server/panda/getJob" % (self.args.jobserver,
+            #                                                        self.args.jobserver_port))
+            c.setopt(c.URL, "http://complynx.net/loopback.php")
             c.setopt(c.WRITEFUNCTION, buf.write)
             c.setopt(c.POSTFIELDS, urllib.urlencode(data))
+            c.setopt(c.HTTPHEADER, ['Accept: application/json'])
             # c.setopt(c.COMPRESS, True)
-            c.setopt(c.SSL_VERIFYPEER, False)
-            if self.sslCert != "":
-                c.setopt(c.SSLCERT, self.sslCert)
-                c.setopt(c.SSLKEY, self.sslCert)
-            if self.sslPath != "":
-                c.setopt(c.CAPATH, self.sslPath)
-            c.setopt(c.SSL_VERIFYPEER, False)
+            # c.setopt(c.SSL_VERIFYPEER, False)
+            # if self.sslCert != "":
+            #     c.setopt(c.SSLCERT, self.sslCert)
+            #     c.setopt(c.SSLKEY, self.sslCert)
+            # if self.sslPath != "":
+            #     c.setopt(c.CAPATH, self.sslPath)
+            # c.setopt(c.SSL_VERIFYPEER, False)
             # c.setopt(c.USE_SSL, True)
             c.perform()
             c.close()
-            jobDesc = urlparse.parse_qs(str(buf.getvalue()).strip(" \n\r\t"), True)
+            self.logger.debug(str(buf.getvalue()))
+            # jobDesc = urlparse.parse_qs(str(buf.getvalue()).strip(" \n\r\t"), True)
             buf.close()
 
         # now reduce arrays
-        for k in jobDesc:
-            if len(jobDesc[k]) == 1:
-                jobDesc[k] = jobDesc[k][0]
-
-        self.logger.debug("got job description: "+json.dumps(jobDesc, indent=4))
+        # for k in jobDesc:
+        #     if len(jobDesc[k]) == 1:
+        #         jobDesc[k] = jobDesc[k][0]
+        #
+        # self.logger.debug("got job description: "+json.dumps(jobDesc, indent=4))
 
 
 # main
