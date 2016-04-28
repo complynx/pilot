@@ -24,10 +24,13 @@ class Pilot:
     user_agent = 'Pilot/2.0'
 
     def __init__(self):
+        self.dir = os.path.dirname(os.path.realpath(__file__))
+
         self.argParser = argparse.ArgumentParser(description="This is simplepilot. It will start your task... maybe..."
                                                              " in some distant future... on a specific environment..."
                                                              " with the help of some magic...")
-        self.argParser.add_argument("--logconf", type=logging.config.fileConfig, default="loggers.ini",
+        self.argParser.add_argument("--logconf", type=logging.config.fileConfig, default=os.path.join(self.dir,
+                                                                                                      "loggers.ini"),
                                     help="specify logger parameters file", metavar="path/to/loggers.ini")
         self.argParser.add_argument("--cacert", default=os.environ.get('X509_USER_PROXY',
                                                                        '/tmp/x509up_u%s' % str(os.getuid())),
@@ -78,7 +81,6 @@ class Pilot:
                            (sys.version.split(" ")[0],
                             platform.system(), platform.machine())
 
-
     def test_certificate_info(self):
         if os.path.exists(self.args.cacert):
             self.sslCert = self.args.cacert
@@ -87,20 +89,28 @@ class Pilot:
 
         self.sslCertOrPath = self.sslCert if self.sslCert != "" else self.sslPath
 
+    def print_initial_information(self):
+        if self.args is not None:
+            self.logger.info("Pilot is running.")
+            self.logger.info("Started with arguments %s" % vars(self.args))
+        self.logger.info("User-Agent: " + self.user_agent)
+
+        self.logger.info("Pilot is started from %s." % self.dir)
+        self.logger.info("Working directory is %s." % os.getcwd())
+
+        self.logger.info("Testing requirements...")
+        requirements = pip.req.parse_requirements(os.path.join(self.dir,
+                                                               "requirements.txt"),
+                                                  session=False)
+        for req in requirements:
+            self.logger.info("%s (%s)" % (req.name, req.installed_version))
+
     def run(self, argv):
         self.args = self.argParser.parse_args(sys.argv[1:])
         self.test_certificate_info()
 
         self.logger = logging.getLogger("pilot")
-        self.logger.info("Pilot running")
-        self.logger.info("User-Agent: " + self.user_agent)
-
-        r = pip.req.parse_requirements(os.path.join(os.path.dirname(os.path.realpath(__file__)), "requirements.txt"),
-                                       session=False)
-
-        self.logger.info("Testing requirements.")
-        for req in r:
-            self.logger.info("Requirement: %s (%s)" % (req.name, req.installed_version))
+        self.print_initial_information()
 
         self.get_queuedata()
         self.get_job()
