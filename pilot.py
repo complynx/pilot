@@ -122,6 +122,7 @@ class Pilot:
 
         self.get_queuedata()
         job_desc = self.get_job()
+        self.run_job(job_desc)
 
     @staticmethod
     def time_stamp():
@@ -136,7 +137,8 @@ class Pilot:
 
         return str("%s%s%02d%02d" % (time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()), signstr, tmptz_hours, int(tmptz/60-tmptz_hours*60)))
 
-    def send_job_state(self,job_desc,state):
+    def send_job_state(self, job_desc, state):
+        self.logger.info("Setting job state of job %s to %s" % (job_desc["PandaID"], state))
         data = {
             'node': self.node_name,
             'state': state,
@@ -168,7 +170,9 @@ class Pilot:
     def run_job(self, job_desc):
         self.send_job_state(job_desc, "starting")
         self.send_job_state(job_desc, "running")
-        s, o = commands.getstatusoutput(job_desc["trfName"]+" "+job_desc["jobPars"])
+        cmd = job_desc["trfName"]+" "+job_desc["jobPars"]
+        self.logger.info("Starting job cmd: %s" % cmd)
+        s, o = commands.getstatusoutput(cmd)
         self.logger.info("Job ended with status: %d" % s)
         self.logger.info("Job output:\n%s" % o)
         self.send_job_state(job_desc, "holding")
