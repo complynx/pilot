@@ -102,7 +102,9 @@ class Pilot:
             c.setopt(c.CAPATH, self.sslCertOrPath)
         c.setopt(c.CONNECTTIMEOUT, 20)
         c.setopt(c.TIMEOUT, 120)
-        c.setopt(c.HTTPHEADER, ["User-Agent: " + self.user_agent])
+        c.setopt(c.HTTPHEADER, ['Accept: application/json;q=0.9,'
+                                'text/html,application/xhtml+xml,application/xml;q=0.7,*/*;q=0.5',
+                                'User-Agent: ' + self.user_agent])
         return c
 
     def get_queuedata(self):
@@ -139,7 +141,7 @@ class Pilot:
             self.logger.info("Trying to fetch job description from local file %s." % self.args.job_description)
             with open(self.args.job_description) as f:
                 try:
-                    jobDesc = urlparse.parse_qs(f.read().strip(" \n\r\t"), True)
+                    jobDesc = json.load(f)
                     self.logger.info("Successfully loaded file and parsed.")
                 except:
                     self.logger.warinig("File loading and parsing failed.")
@@ -168,33 +170,32 @@ class Pilot:
 
             buf = StringIO()
             c = self.create_curl()
-            # c.setopt(c.URL, "https://%s:%d/server/panda/getJob" % (self.args.jobserver,
-            #                                                        self.args.jobserver_port))
-            c.setopt(c.URL, "http://complynx.net/loopback.php")
+            c.setopt(c.URL, "https://%s:%d/server/panda/getJob" % (self.args.jobserver,
+                                                                   self.args.jobserver_port))
+            # c.setopt(c.URL, "http://complynx.net/loopback.php")
             c.setopt(c.WRITEFUNCTION, buf.write)
             c.setopt(c.POSTFIELDS, urllib.urlencode(data))
-            c.setopt(c.HTTPHEADER, ['Accept: application/json'])
             # c.setopt(c.COMPRESS, True)
-            # c.setopt(c.SSL_VERIFYPEER, False)
-            # if self.sslCert != "":
-            #     c.setopt(c.SSLCERT, self.sslCert)
-            #     c.setopt(c.SSLKEY, self.sslCert)
-            # if self.sslPath != "":
-            #     c.setopt(c.CAPATH, self.sslPath)
-            # c.setopt(c.SSL_VERIFYPEER, False)
+            c.setopt(c.SSL_VERIFYPEER, False)
+            if self.sslCert != "":
+                c.setopt(c.SSLCERT, self.sslCert)
+                c.setopt(c.SSLKEY, self.sslCert)
+            if self.sslPath != "":
+                c.setopt(c.CAPATH, self.sslPath)
+            c.setopt(c.SSL_VERIFYPEER, False)
             # c.setopt(c.USE_SSL, True)
             c.perform()
             c.close()
-            self.logger.debug(str(buf.getvalue()))
-            # jobDesc = urlparse.parse_qs(str(buf.getvalue()).strip(" \n\r\t"), True)
+            # self.logger.debug(str(buf.getvalue()))
+            jobDesc = json.loads(buf.getvalue())
             buf.close()
 
-        # now reduce arrays
+        # # now reduce arrays
         # for k in jobDesc:
         #     if len(jobDesc[k]) == 1:
         #         jobDesc[k] = jobDesc[k][0]
-        #
-        # self.logger.debug("got job description: "+json.dumps(jobDesc, indent=4))
+
+        self.logger.debug("got job description: "+json.dumps(jobDesc, indent=4))
 
 
 # main
