@@ -125,7 +125,7 @@ class Pilot:
         self.run_job(job_desc)
 
     @staticmethod
-    def time_stamp():
+    def time_stamp(t=time.localtime()):
         """ return ISO-8601 compliant date/time format """
 
         tmptz = time.timezone
@@ -135,7 +135,8 @@ class Pilot:
             signstr = '+'
         tmptz_hours = int(tmptz/3600)
 
-        return str("%s%s%02d%02d" % (time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()), signstr, tmptz_hours, int(tmptz/60-tmptz_hours*60)))
+        return str("%s%s%02d%02d" % (time.strftime("%Y-%m-%dT%H:%M:%S", t), signstr, tmptz_hours,
+                                     int(tmptz/60-tmptz_hours*60)))
 
     def send_job_state(self, job_desc, state):
         self.logger.info("Setting job state of job %s to %s" % (job_desc["PandaID"], state))
