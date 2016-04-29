@@ -167,9 +167,11 @@ class Pilot:
         c.setopt(c.SSL_VERIFYPEER, False)
         c.perform()
         c.close()
-        jobDesc = json.loads(buf.getvalue())
+        _str = str(buf.getvalue())
+        self.logger.debug("Got from server: "+_str)
+        # jobDesc = json.loads(_str)
         buf.close()
-        self.logger.info("Got from server: " % json.dumps(jobDesc, indent=4))
+        # self.logger.info("Got from server: " % json.dumps(jobDesc, indent=4))
 
     def run_job(self, job_desc):
         job_desc["exeErrorCode"] = None
@@ -268,7 +270,9 @@ class Pilot:
             c.setopt(c.SSL_VERIFYPEER, False)
             c.perform()
             c.close()
-            jobDesc = json.loads(buf.getvalue())
+            _str = str(buf.getvalue())
+            self.logger.debug("Got from server: "+_str)
+            jobDesc = json.loads(_str)
             buf.close()
 
         self.logger.info("Got job description.")
