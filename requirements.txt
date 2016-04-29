@@ -1,4 +1,4 @@
-argparse; python_version<2.7
+# argparse; python_version<2.7
 pycurl
 py-cpuinfo
 psutil>=4.1
