@@ -144,7 +144,7 @@ class Pilot:
             'node': self.node_name,
             'state': state,
             'jobId': job_desc["PandaID"],
-            'pilotID': self.pilot_id,
+            # 'pilotID': self.pilot_id,
             'timestamp': self.time_stamp(),
             'workdir': os.getcwd()
         }
