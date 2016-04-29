@@ -1,5 +1,5 @@
 pip>=7.1
-argparse
+argparse; python_version<2.7
 pycurl
 py-cpuinfo
 psutil>=4.1
