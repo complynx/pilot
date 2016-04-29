@@ -247,7 +247,6 @@ class Pilot:
                 'mem': float(memInfo.total)/1024./1024.,
                 'node': self.node_name,
                 'diskSpace': diskSpace,
-                'pilotID': self.pilot_id,
                 'getProxyKey': False,  # do we need it?
                 'computingElement': self.args.queue,
                 'siteName': self.args.queue,
