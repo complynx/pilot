@@ -177,7 +177,7 @@ class Pilot:
         job_desc["exeErrorCode"] = None
         self.send_job_state(job_desc, "starting")
         self.send_job_state(job_desc, "running")
-        cmd = job_desc["trfName"]+" "+job_desc["jobPars"]
+        cmd = job_desc["transformation"]+" "+job_desc["jobPars"]
         self.logger.info("Starting job cmd: %s" % cmd)
         s, o = commands.getstatusoutput(cmd)
         self.logger.info("Job ended with status: %d" % s)
@@ -281,7 +281,7 @@ class Pilot:
             buf.close()
 
         self.logger.info("Got job description.")
-        self.logger.debug("Job description: "+json.dumps(jobDesc, indent=4)
+        self.logger.debug("Job description: "+json.dumps(jobDesc, indent=4))
         return jobDesc
 
 
