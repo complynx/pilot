@@ -1,4 +1,5 @@
-argparse; python_version<2.7
+pip>=7.1
+argparse
 pycurl
 py-cpuinfo
 psutil>=4.1
