@@ -270,12 +270,18 @@ class Pilot:
             c.perform()
             c.close()
             _str = str(buf.getvalue())
-            self.logger.debug("Got from server: "+_str)
-            jobDesc = json.loads(_str)
+            # self.logger.debug("Got from server: "+_str)
+            try:
+                jobDesc = json.loads(_str)
+            except ValueError:
+                self.logger.error("JSON parser failed.")
+                self.logger.error("Got from server: "+_str)
+                raise
+
             buf.close()
 
         self.logger.info("Got job description.")
-        # self.logger.debug("Job description: "+json.dumps(jobDesc, indent=4)
+        self.logger.debug("Job description: "+json.dumps(jobDesc, indent=4)
         return jobDesc
 
 
