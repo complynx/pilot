@@ -108,7 +108,8 @@ class Pilot:
 
         self.logger.info("Testing requirements...")
         requirements = pip.req.parse_requirements(os.path.join(self.dir,
-                                                               "requirements.txt"))
+                                                               "requirements.txt"),
+                                                  session=False)
         for req in requirements:
             self.logger.info("%s (%s)" % (req.name, req.installed_version))
 
