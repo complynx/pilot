@@ -149,6 +149,9 @@ class Pilot:
             'workdir': os.getcwd()
         }
 
+        if job_desc["exeErrorCode"] is not None:
+            data["exeErrorCode"] = job_desc["exeErrorCode"]
+
         buf = StringIO()
         c = self.create_curl()
         c.setopt(c.URL, "https://%s:%d/server/panda/updateJob" % (self.args.jobserver,
@@ -169,6 +172,7 @@ class Pilot:
         self.logger.info("Got from server: " % json.dumps(jobDesc, indent=4))
 
     def run_job(self, job_desc):
+        job_desc["exeErrorCode"] = None
         self.send_job_state(job_desc, "starting")
         self.send_job_state(job_desc, "running")
         cmd = job_desc["trfName"]+" "+job_desc["jobPars"]
@@ -176,7 +180,9 @@ class Pilot:
         s, o = commands.getstatusoutput(cmd)
         self.logger.info("Job ended with status: %d" % s)
         self.logger.info("Job output:\n%s" % o)
+        job_desc["exeErrorCode"] = s
         self.send_job_state(job_desc, "holding")
+        self.send_job_state(job_desc, "finished")
 
     def create_curl(self):
         c = pycurl.Curl()
