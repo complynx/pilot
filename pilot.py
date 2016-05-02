@@ -205,8 +205,9 @@ class Pilot:
                 try:
                     queuedata = json.load(f)
                     self.logger.info("Successfully loaded file and parsed.")
-                except:
+                except Exception as e:
                     self.logger.warning("File loading and parsing failed.")
+                    self.logger.warning("Exception: "+e.message)
                     pass
         if queuedata is None:
             self.logger.info("Queuedata is not saved locally. Asking server.")
@@ -226,27 +227,28 @@ class Pilot:
         # self.logger.debug("queuedata: "+json.dumps(queuedata, indent=4))
 
     def get_job(self):
-        jobDesc = None
+        job_desc = None
         if self.args.job_description is not None:
             self.logger.info("Trying to fetch job description from local file %s." % self.args.job_description)
             with open(self.args.job_description) as f:
                 try:
-                    jobDesc = json.load(f)
+                    job_desc = json.load(f)
                     self.logger.info("Successfully loaded file and parsed.")
-                except:
+                except Exception as e:
                     self.logger.warnig("File loading and parsing failed.")
+                    self.logger.warning("Exception: "+e.message)
                     pass
-        if jobDesc is None:
-            cpuInfo = cpuinfo.get_cpu_info()
-            memInfo = psutil.virtual_memory()
-            diskSpace = float(psutil.disk_usage(".").total)/1024./1024.
+        if job_desc is None:
+            cpu_info = cpuinfo.get_cpu_info()
+            mem_info = psutil.virtual_memory()
+            disk_space = float(psutil.disk_usage(".").total)/1024./1024.
             # diskSpace = min(diskSpace, 14336)  # I doubt this is necessary, so RM
 
             data = {
-                'cpu': float(cpuInfo['hz_actual_raw'][0])/1000000.,
-                'mem': float(memInfo.total)/1024./1024.,
+                'cpu': float(cpu_info['hz_actual_raw'][0])/1000000.,
+                'mem': float(mem_info.total)/1024./1024.,
                 'node': self.node_name,
-                'diskSpace': diskSpace,
+                'diskSpace': disk_space,
                 'getProxyKey': False,  # do we need it?
                 'computingElement': self.args.queue,
                 'siteName': self.args.queue,
@@ -272,7 +274,7 @@ class Pilot:
             _str = str(buf.getvalue())
             # self.logger.debug("Got from server: "+_str)
             try:
-                jobDesc = json.loads(_str)
+                job_desc = json.loads(_str)
             except ValueError:
                 self.logger.error("JSON parser failed.")
                 self.logger.error("Got from server: "+_str)
@@ -281,8 +283,8 @@ class Pilot:
             buf.close()
 
         self.logger.info("Got job description.")
-        self.logger.debug("Job description: "+json.dumps(jobDesc, indent=4))
-        return jobDesc
+        self.logger.debug("Job description: "+json.dumps(job_desc, indent=4))
+        return job_desc
 
 
 # main
