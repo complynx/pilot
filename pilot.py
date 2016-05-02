@@ -144,6 +144,7 @@ class Pilot:
 
         self.print_initial_information()
 
+        # noinspection PyBroadException
         try:
             self.get_queuedata()
             job_desc = self.get_job()
@@ -355,7 +356,3 @@ if __name__ == "__main__":
     """
     pilot = Pilot()
     pilot.run(sys.argv)
-
-
-
-
