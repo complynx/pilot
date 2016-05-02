@@ -57,7 +57,7 @@ class Pilot:
                                     help="Panda job server port.",
                                     metavar="PORT")
 
-        testqueuedata = "queuedata.json" if os.path.isfile("queuedata.json") else ""
+        testqueuedata = "queuedata.json" if os.path.isfile("queuedata.json") else None
         self.argParser.add_argument("--queuedata", default=testqueuedata,
                                     type=lambda x: x if os.path.isfile(x) else testqueuedata,
                                     help="Preset queuedata file.",
@@ -79,6 +79,7 @@ class Pilot:
         self.sslPath = ""
         self.sslCertOrPath = ""
         self.args = None
+        self.queuedata = None
         self.user_agent += " (Python %s; %s %s; rv:alpha) minipilot/daniel" % \
                            (sys.version.split(" ")[0],
                             platform.system(), platform.machine())
@@ -120,9 +121,13 @@ class Pilot:
         self.logger = logging.getLogger("pilot")
         self.print_initial_information()
 
-        self.get_queuedata()
-        job_desc = self.get_job()
-        self.run_job(job_desc)
+        try:
+            self.get_queuedata()
+            job_desc = self.get_job()
+            self.run_job(job_desc)
+        except Exception as e:
+            self.logger.error("During the run encountered uncaught exception.")
+            self.logger.error("")
 
     @staticmethod
     def time_stamp(t=time.localtime()):
@@ -176,13 +181,18 @@ class Pilot:
     def run_job(self, job_desc):
         job_desc["exeErrorCode"] = None
         self.send_job_state(job_desc, "starting")
+
         self.send_job_state(job_desc, "running")
+
         cmd = job_desc["transformation"]+" "+job_desc["jobPars"]
+
         self.logger.info("Starting job cmd: %s" % cmd)
         s, o = commands.getstatusoutput(cmd)
+
         self.logger.info("Job ended with status: %d" % s)
         self.logger.info("Job output:\n%s" % o)
         job_desc["exeErrorCode"] = s
+
         self.send_job_state(job_desc, "holding")
         self.send_job_state(job_desc, "finished")
 
@@ -197,19 +207,24 @@ class Pilot:
                                 'User-Agent: ' + self.user_agent])
         return c
 
-    def get_queuedata(self):
-        queuedata = None
-        if self.args.queuedata != "":
-            self.logger.info("Trying to fetch queuedata from local file %s." % self.args.queuedata)
-            with open(self.args.queuedata) as f:
-                try:
-                    queuedata = json.load(f)
+    def try_get_json_file(self, file_name):
+        if file_name is not None and file_name != "":
+            self.logger.info("Trying to fetch JSON local file %s." % file_name)
+            try:
+                with open(file_name) as f:
+                    j = json.load(f)
                     self.logger.info("Successfully loaded file and parsed.")
-                except Exception as e:
-                    self.logger.warning("File loading and parsing failed.")
-                    self.logger.warning("Exception: "+e.message)
-                    pass
-        if queuedata is None:
+                    return j
+            except Exception as e:
+                self.logger.warning(str(e))
+                self.logger.warnig("File loading and parsing failed.")
+                pass
+        return None
+
+    def get_queuedata(self):
+        self.logger.info("Trying to get queuedata.")
+        self.queuedata = self.try_get_json_file(self.args.queuedata)
+        if self.queuedata is None:
             self.logger.info("Queuedata is not saved locally. Asking server.")
 
             buf = StringIO()
@@ -220,25 +235,17 @@ class Pilot:
             c.setopt(c.WRITEFUNCTION, buf.write)
             c.perform()
             c.close()
-            queuedata = json.loads(buf.getvalue())
+            self.queuedata = json.loads(buf.getvalue())
             buf.close()
 
         self.logger.info("Queuedata obtained.")
         # self.logger.debug("queuedata: "+json.dumps(queuedata, indent=4))
 
     def get_job(self):
-        job_desc = None
-        if self.args.job_description is not None:
-            self.logger.info("Trying to fetch job description from local file %s." % self.args.job_description)
-            with open(self.args.job_description) as f:
-                try:
-                    job_desc = json.load(f)
-                    self.logger.info("Successfully loaded file and parsed.")
-                except Exception as e:
-                    self.logger.warnig("File loading and parsing failed.")
-                    self.logger.warning("Exception: "+e.message)
-                    pass
+        self.logger.info("Trying to get job description.")
+        job_desc = self.try_get_json_file(self.args.job_description)
         if job_desc is None:
+            self.logger.info("Job description is not saved locally. Asking server.")
             cpu_info = cpuinfo.get_cpu_info()
             mem_info = psutil.virtual_memory()
             disk_space = float(psutil.disk_usage(".").total)/1024./1024.
