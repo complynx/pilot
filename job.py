@@ -6,17 +6,15 @@ import json
 from job_description_fixer import description_fixer
 
 
-class Job:
+class Job(object):
     __state = "sent"
     pilot = None
     description = None
     error_code = None
-    id = None
-    command = 'ls'
-    input_files = {}
-    output_files = {}
-    log_file = ''
     no_update = False
+    description_aliases = {
+        'id': 'job_id'
+    }
 
     def __init__(self, _pilot, _desc):
         self.pilot = _pilot
@@ -26,9 +24,32 @@ class Job:
         self.pilot.logger.debug(json.dumps(self.description, indent=4, sort_keys=True))
         self.parse_description()
 
+    def __getattr__(self, item):
+        """
+        Propagation of description values to Job instance if they are not shadowed.
+        """
+        if hasattr(self, item):
+            return object.__getattribute__(self, item)
+        if item in self.description_aliases:
+            return self.description[self.description_aliases[item]]
+        if item in self.description:
+            return self.description[item]
+        return object.__getattribute__(self, item)
+
+    def __setattr__(self, key, value):
+        """
+        Propagation of description values to Job instance if they are not shadowed.
+        """
+        if hasattr(self, key):
+            object.__setattr__(self, key, value)
+        if key in self.description_aliases:
+            self.description[self.description_aliases[key]] = value
+        if key in self.description:
+            self.description[key] = value
+        object.__setattr__(self, key, value)
+
     def parse_description(self):
-        self.id = self.description["job_id"]
-        self.command = self.description["command"]+" "+self.description["command_parameters"]
+        self.pilot.logger.debug("id: %d" % self.id)
 
     def convert_null(self, val):
         return val if val != "NULL" else None
