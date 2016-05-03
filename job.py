@@ -86,20 +86,20 @@ class Job:
             # self.logger.info("Got from server: " % json.dumps(jobDesc, indent=4))
 
     @state.setter
-    def state(self, _new_state):
+    def state(self, value):
         """
         Sets new state and updates server.
 
-        :param _new_state: new job state.
+        :param value: new job state.
         """
-        if _new_state != self.__state:
+        if value != self.__state:
             self.pilot.logger.info("Setting job state of job %s to %s" % (self.id, self.state))
-            self.__state = _new_state
+            self.__state = value
             self.send_state()
 
     def run(self):
-        self.state = 'starting'
-        self.state = 'stagein'
+        self.state('starting')
+        self.state('stagein')
 
         self.state = 'running'
 
