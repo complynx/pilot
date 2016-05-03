@@ -28,27 +28,30 @@ class Job(object):
         """
         Propagation of description values to Job instance if they are not shadowed.
         """
-        if hasattr(self, item):
+        try:
             return object.__getattribute__(self, item)
-        if self.description is not None:
-            if item in self.description_aliases:
-                return self.description[self.description_aliases[item]]
-            if item in self.description:
-                return self.description[item]
-        return object.__getattribute__(self, item)
+        except AttributeError:
+            if self.description is not None:
+                if item in self.description_aliases:
+                    return self.description[self.description_aliases[item]]
+                if item in self.description:
+                    return self.description[item]
+            return object.__getattribute__(self, item)
 
     def __setattr__(self, key, value):
         """
         Propagation of description values to Job instance if they are not shadowed.
         """
-        if hasattr(self, key):
+        try:
             object.__setattr__(self, key, value)
-        if self.description is not None:
-            if key in self.description_aliases:
-                self.description[self.description_aliases[key]] = value
-            if self.description is not None and key in self.description:
-                self.description[key] = value
-        object.__setattr__(self, key, value)
+        except AttributeError:
+            if self.description is not None:
+                if key in self.description_aliases:
+                    self.description[self.description_aliases[key]] = value
+                elif self.description is not None and key in self.description:
+                    self.description[key] = value
+                return
+            object.__setattr__(self, key, value)
 
     def parse_description(self):
         self.pilot.logger.debug("id: %d" % self.id)
