@@ -54,6 +54,7 @@ key_fix = {
     'maxDiskCount': 'maximum_disk_space',  # what does "count" mean? Partitions number? HDD's? Maybe number of disks
                                            # been used from the first installation of OS on that node?
     'attemptNr': 'attempt_number',  # bad practice to strip words API needs to be readable
+    'prodDBlockToken': 'prod_dblock_token',  # camel_to_snake makes d_block, which is right, but heavier
 }
 
 arrays = []
