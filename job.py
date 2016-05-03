@@ -4,6 +4,7 @@ import commands
 import json
 from job_description_fixer import description_fixer
 import shlex
+import pipes
 
 
 class Job(object):
@@ -56,9 +57,18 @@ class Job(object):
 
     def modify_queuedata(self):
         params = self.command_parameters
+        modifier = ""
+        others = ""
         if isinstance(params, basestring):
             splat = shlex.split(params, True)
-            self.pilot.logger.debug(json.dumps(splat, indent=4))
+            for key in splat:
+                if key.startswith("--overwriteQueuedata"):
+                    modifier = key[len("--overwriteQueuedata"):]
+                else:
+                    others += pipes.quote(key)
+
+            self.pilot.logger.debug("overwrite: %s" % (modifier))
+            self.pilot.logger.debug("params: %s" % (others))
 
     def parse_description(self):
         self.modify_queuedata()
