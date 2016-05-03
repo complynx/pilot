@@ -43,6 +43,9 @@ class Job:
             fsize = self.description["fsize"].split(',')
             c_sum = self.description["checksum"].split(',')
 
+            self.pilot.logger.debug(json.dumps(in_files, indent=4))
+            self.pilot.logger.debug(json.dumps(c_sum, indent=4))
+
             for i, f in enumerate(in_files):
                 self.input_files[i] = {
                     "name": self.convert_null(f),
