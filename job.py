@@ -35,15 +35,15 @@ class Job:
 
     def extract_input_files(self):
         if self.description['inFiles'] and self.description['inFiles'] != "NULL":
-            inFiles = self.description["inFiles"].split(',')
+            in_files = self.description["inFiles"].split(',')
             ddmEndPointIn = self.description["ddmEndPointIn"].split(',')
             destinationSE = self.description["destinationSE"].split(',')
             dispatchDBlockToken = self.description["dispatchDBlockToken"].split(',')
             realDatasetsIn = self.description["realDatasetsIn"].split(',')
             fsize = self.description["fsize"].split(',')
-            checksum = self.description["checksum"].split(',')
+            c_sum = self.description["checksum"].split(',')
 
-            for i, f in enumerate(inFiles):
+            for i, f in enumerate(in_files):
                 self.input_files[i] = {
                     "name": self.convert_null(f),
                     "ddm_endpoint": self.convert_null(ddmEndPointIn[i]),
@@ -51,7 +51,7 @@ class Job:
                     "dispatchDBlockToken": self.convert_null(dispatchDBlockToken[i]),
                     "realDataset": self.convert_null(realDatasetsIn[i]),
                     "fsize": long(self.convert_null(fsize[i])),
-                    "checksum": self.convert_null(checksum[i])
+                    "checksum": self.convert_null(c_sum[i])
                 }
 
         self.pilot.logger.debug("extracted files: "+json.dumps(self.input_files, indent=4))
