@@ -4,8 +4,8 @@ __author__ = 'complynx'
 def split(val, separator=","):
     v_arr = val.split(separator)
 
-    for i in v_arr:
-        v_arr[i] = parse_value(v_arr[i])
+    for i, v in enumerate(v_arr):
+        v_arr[i] = parse_value(v)
 
     return v_arr
 
