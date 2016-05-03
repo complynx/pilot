@@ -1,4 +1,3 @@
-import pilot
 import urllib
 import os
 import commands
@@ -36,12 +35,13 @@ class Job(object):
                     return self.description[self.description_aliases[item]]
                 if item in self.description:
                     return self.description[item]
-            return object.__getattribute__(self, item)
+            raise
 
     def __setattr__(self, key, value):
         """
         Propagation of description values to Job instance if they are not shadowed.
         """
+        self.pilot.logger.info("common setter")
         try:
             object.__setattr__(self, key, value)
         except AttributeError:
@@ -51,7 +51,7 @@ class Job(object):
                 elif self.description is not None and key in self.description:
                     self.description[key] = value
                 return
-            object.__setattr__(self, key, value)
+            raise
 
     def parse_description(self):
         self.pilot.logger.debug("id: %d" % self.id)
@@ -97,6 +97,7 @@ class Job(object):
 
         :param value: new job state.
         """
+        self.pilot.logger.info("State setter")
         if value != self.__state:
             self.pilot.logger.info("Setting job state of job %s to %s" % (self.id, value))
             self.__state = value
