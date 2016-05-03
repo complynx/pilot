@@ -44,6 +44,8 @@ def is_long(s):
 
 
 def parse_value(value):
+    if not isinstance(value, basestring):
+        return value
     if is_long(value):
         return long(value)
     if is_float(value):
