@@ -23,6 +23,8 @@ class Job(object):
         self.pilot.logger.debug(json.dumps(self.description, indent=4, sort_keys=True))
         self.parse_description()
 
+        self.description["state"] = "test"
+
     def __getattr__(self, item):
         """
         Propagation of description values to Job instance if they are not shadowed.
