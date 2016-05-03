@@ -46,8 +46,14 @@ class Pilot:
         self.argParser.add_argument("--logconf", type=logging.config.fileConfig, default=os.path.join(self.dir,
                                                                                                       "loggers.ini"),
                                     help="specify logger parameters file", metavar="path/to/loggers.ini")
-        self.argParser.add_argument("--cacert", default=os.environ.get('X509_USER_PROXY',
-                                                                       '/tmp/x509up_u%s' % str(os.getuid())),
+        testuserproxy = ""
+        try:
+            testuserproxy = '/tmp/x509up_u%s' % str(os.getuid())
+        except AttributeError:
+            # Wow, not UNIX. Nevermind, skip.
+            pass
+
+        self.argParser.add_argument("--cacert", default=os.environ.get('X509_USER_PROXY', testuserproxy),
                                     help="specify CA certificate or path for your transactions to server",
                                     metavar="path/to/your/certificate")
         self.argParser.add_argument("--capath", default=os.environ.get('X509_CERT_DIR',

@@ -60,6 +60,7 @@ class Job(object):
         modifier = ""
         others = ""
         if isinstance(params, basestring):
+            print(type(params))
             splat = shlex.split(str(params), True)
             for key in splat:
                 if key.startswith('--overwriteQueuedata='):
