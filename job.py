@@ -28,6 +28,8 @@ class Job:
         self.id = self.description["PandaID"]
         self.command = self.description["transformation"]+" "+self.description["jobPars"]
 
+        self.extract_input_files()
+
     def convert_null(self, str):
         return str if str != "NULL" else None
 
@@ -98,8 +100,8 @@ class Job:
             self.send_state()
 
     def run(self):
-        self.state('starting')
-        self.state('stagein')
+        self.state = 'starting'
+        self.state = 'stagein'
 
         self.state = 'running'
 
