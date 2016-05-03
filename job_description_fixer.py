@@ -1,4 +1,9 @@
-__author__ = 'complynx'
+import re
+
+
+def camel_to_snake(name):
+    s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
+    return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
 
 
 def split(val, separator=","):
@@ -13,11 +18,20 @@ def split(val, separator=","):
 def get_nulls(val):
     return val if val != "NULL" else None
 
+
 key_fix = {
-    'PandaID': 'id',  # it is job id, not PanDA one
+    'PandaID': 'job_id',  # it is job id, not PanDA
     'transformation': 'command',  # making it more convenient
     'jobPars': 'command_parameters',  # -.-
-
+    'coreCount': 'cores_number',
+    'prodUserID': 'user_dn',
+    'prodSourceLabel': 'label',  # We don't have any other labels in there. And this is The Label, or just label
+    'homepackage': 'home_package',  # lowercase, all of a sudden
+    "nSent": 'sending_attempts',  # are they?
+    'minRamCount': 'minimum_ram',  # reads better
+    'maxDiskCount': 'maximum_disk_space',  # what does "count" mean? Partitions number? HDD's? Maybe number of disks
+                                           # been used from the first installation of OS on that node?
+    'attemptNr': 'attempt_number',  # bad practice to strip words API needs to be readable
 }
 
 arrays = []
@@ -25,7 +39,7 @@ arrays = []
 skip_keys = [  # these are tested elsewhere
     'inFiles', "ddmEndPointIn", "destinationSE", "dispatchDBlockToken", "realDatasetsIn", "prodDBlocks", "fsize",
     "checksum", "outFiles", "ddmEndPointOut", "fileDestinationSE", "dispatchDBlockTokenForOut",
-    "destinationDBlockToken", "realDatasets", "destinationDblock", "logGUID"
+    "destinationDBlockToken", "realDatasets", "destinationDblock", "logGUID", "scopeIn", "scopeOut", "scopeLog"
 ]
 
 
@@ -64,6 +78,7 @@ def get_input_files(description):
         data_blocks = split(description["prodDBlocks"])
         size = split(description["fsize"])
         c_sum = split(description["checksum"])
+        scope = parse_value(description["scopeIn"])
 
         for i, f in enumerate(in_files):
             if f is not None:
@@ -74,7 +89,8 @@ def get_input_files(description):
                     "dataset": datasets[i],
                     "data_block": data_blocks[i],
                     "size": size[i],
-                    "checksum": c_sum[i]
+                    "checksum": c_sum[i],
+                    'scope': scope
                 }
     return files
 
@@ -84,6 +100,7 @@ def fix_log(description, files):
         if description["logGUID"] and description["logGUID"] != "NULL" and description["logFile"] in\
                     files:
             files[description["logFile"]]["guid"] = description["logGUID"]
+            files[description["logFile"]]["scope"] = description["scopeLog"]
 
     return files
 
@@ -98,6 +115,7 @@ def get_output_files(description):
         destination_data_block_token = split(description["destinationDBlockToken"])
         datasets = split(description["realDatasets"])
         data_blocks = split(description["destinationDblock"])
+        scope = parse_value(description["scopeOut"])
 
         for i, f in enumerate(out_files):
             if f is not None:
@@ -107,7 +125,8 @@ def get_output_files(description):
                     "dispatch_data_block_token": data_block_token[i],
                     "destination_data_block_token": destination_data_block_token[i],
                     "dataset": datasets[i],
-                    "data_block": data_blocks[i]
+                    "data_block": data_blocks[i],
+                    "scope": scope
                 }
 
     return fix_log(description, files)
@@ -118,13 +137,15 @@ def description_fixer(description):
     for key in description:
         value = description[key]
 
-        if key in key_fix:
-            key = key_fix[key]
-
         fixed['input_files'] = get_input_files(description)
         fixed['output_files'] = get_output_files(description)
 
         if key not in skip_keys:
+            if key in key_fix:
+                key = key_fix[key]
+            else:
+                key = camel_to_snake(key)
+
             if key in arrays:
                 fixed[key] = split(value)
             else:
