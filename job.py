@@ -3,6 +3,7 @@ import os
 import commands
 import json
 from job_description_fixer import description_fixer
+import shlex
 
 
 class Job(object):
@@ -22,8 +23,6 @@ class Job(object):
         self.description = description_fixer(_desc)
         self.pilot.logger.debug(json.dumps(self.description, indent=4, sort_keys=True))
         self.parse_description()
-
-        self.description["state"] = "test"
 
     def __getattr__(self, item):
         """
@@ -55,11 +54,15 @@ class Job(object):
                 return
             object.__setattr__(self, key, value)
 
-    def parse_description(self):
-        self.pilot.logger.debug("id: %d" % self.id)
+    def modify_queuedata(self):
+        params = self.command_parameters
+        if isinstance(params, basestring):
+            splat = shlex.split(params, True)
+            self.pilot.logger.debug(json.dumps(splat, indent=4))
 
-    def convert_null(self, val):
-        return val if val != "NULL" else None
+    def parse_description(self):
+        self.modify_queuedata()
+        self.pilot.logger.debug("id: %d" % self.id)
 
     @property
     def state(self):
@@ -69,9 +72,7 @@ class Job(object):
         """
         Sends job state to the dedicated panda server.
         """
-        if self.no_update:
-            self.pilot.logger.info("Configured without server updates, skip.")
-        else:
+        if not self.no_update:
             self.pilot.logger.info("Updating server job status...")
             data = {
                 'node': self.pilot.node_name,
