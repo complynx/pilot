@@ -30,10 +30,11 @@ class Job(object):
         """
         if hasattr(self, item):
             return object.__getattribute__(self, item)
-        if item in self.description_aliases:
-            return self.description[self.description_aliases[item]]
-        if item in self.description:
-            return self.description[item]
+        if self.description is not None:
+            if item in self.description_aliases:
+                return self.description[self.description_aliases[item]]
+            if item in self.description:
+                return self.description[item]
         return object.__getattribute__(self, item)
 
     def __setattr__(self, key, value):
@@ -42,10 +43,11 @@ class Job(object):
         """
         if hasattr(self, key):
             object.__setattr__(self, key, value)
-        if key in self.description_aliases:
-            self.description[self.description_aliases[key]] = value
-        if key in self.description:
-            self.description[key] = value
+        if self.description is not None:
+            if key in self.description_aliases:
+                self.description[self.description_aliases[key]] = value
+            if self.description is not None and key in self.description:
+                self.description[key] = value
         object.__setattr__(self, key, value)
 
     def parse_description(self):
