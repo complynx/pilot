@@ -62,10 +62,11 @@ class Job(object):
         if isinstance(params, basestring):
             splat = shlex.split(params, True)
             for key in splat:
-                if key.startswith("--overwriteQueuedata"):
-                    modifier = key[len("--overwriteQueuedata"):]
+                print(key)
+                if key.startswith("--overwriteQueuedata="):
+                    modifier = key[len("--overwriteQueuedata="):]
                 else:
-                    others += pipes.quote(key)
+                    others += " " + pipes.quote(key)
 
             self.pilot.logger.debug("overwrite: %s" % (modifier))
             self.pilot.logger.debug("params: %s" % (others))
