@@ -15,7 +15,6 @@ import socket
 import platform
 import pip
 import time
-import commands
 import traceback
 
 
@@ -86,6 +85,8 @@ class Pilot:
                                     help="Job description file, preloaded from server. The contents must be "
                                          "application/x-www-form-urlencoded string. Later may be JSON also.",
                                     metavar="tag")
+        self.argParser.add_argument("--no_job_update", action='store_true',
+                                    help="Disable job server updates")
 
         self.logger = logging.getLogger("pilot")
         self.user_agent += " (Python %s; %s %s; rv:alpha) minipilot/daniel" % \
@@ -147,8 +148,8 @@ class Pilot:
         # noinspection PyBroadException
         try:
             self.get_queuedata()
-            job_desc = self.get_job()
-            self.run_job(job_desc)
+            job = self.get_job()
+            job.run()
         except:
             self.logger.error("During the run encountered uncaught exception.")
             self.logger.error(traceback.format_exc())
@@ -192,56 +193,6 @@ class Pilot:
         _str = str(buf.getvalue())
         buf.close()
         return _str
-
-    def send_job_state(self, job_desc, state):
-        """
-        Sends job state to the dedicated panda server.
-
-        :param job_desc: job description.
-        :param state: new job state.
-        """
-        self.logger.info("Setting job state of job %s to %s" % (job_desc["PandaID"], state))
-        data = {
-            'node': self.node_name,
-            'state': state,
-            'jobId': job_desc["PandaID"],
-            # 'pilotID': self.pilot_id,
-            'timestamp': self.time_iso8601(),
-            'workdir': os.getcwd()
-        }
-
-        if job_desc["exeErrorCode"] is not None:
-            data["exeErrorCode"] = job_desc["exeErrorCode"]
-
-        _str = self.curl_query("https://%s:%d/server/panda/updateJob" % (self.args.jobserver,
-                                                                         self.args.jobserver_port),
-                               ssl=True, body=urllib.urlencode(data))
-        self.logger.debug("Got from server: "+_str)
-        # jobDesc = json.loads(_str)
-        # self.logger.info("Got from server: " % json.dumps(jobDesc, indent=4))
-
-    def run_job(self, job_desc):
-        """
-        Runs actual received job. Currently without stage-in/stage-out, but there will be they.
-
-        :param job_desc: job description returned by the server.
-        """
-        job_desc["exeErrorCode"] = None
-        self.send_job_state(job_desc, "starting")
-
-        self.send_job_state(job_desc, "running")
-
-        cmd = job_desc["transformation"]+" "+job_desc["jobPars"]
-
-        self.logger.info("Starting job cmd: %s" % cmd)
-        s, o = commands.getstatusoutput(cmd)
-
-        self.logger.info("Job ended with status: %d" % s)
-        self.logger.info("Job output:\n%s" % o)
-        job_desc["exeErrorCode"] = s
-
-        self.send_job_state(job_desc, "holding")
-        self.send_job_state(job_desc, "finished")
 
     def create_curl(self, ssl=False):
         """
@@ -346,7 +297,9 @@ class Pilot:
 
         self.logger.info("Got job description.")
         self.logger.debug("Job description: "+json.dumps(job_desc, indent=4))
-        return job_desc
+        from job import Job
+        job = Job(self, job_desc)
+        return job
 
 
 # main
