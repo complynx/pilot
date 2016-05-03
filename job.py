@@ -23,7 +23,7 @@ class Job:
         if _pilot.args.no_job_update:
             self.no_update = True
         self.description = description_fixer(_desc)
-        self.pilot.logger.debug(json.dumps(self.description, indent=4))
+        self.pilot.logger.debug(json.dumps(self.description, indent=4, sort_keys=True))
         self.parse_description()
 
     def parse_description(self):
