@@ -41,7 +41,6 @@ class Job(object):
         """
         Propagation of description values to Job instance if they are not shadowed.
         """
-        self.pilot.logger.info("common setter")
         try:
             old = object.__getattribute__(self, key)
             object.__setattr__(self, key, value)
@@ -98,7 +97,6 @@ class Job(object):
 
         :param value: new job state.
         """
-        self.pilot.logger.info("State setter")
         if value != self.__state:
             self.pilot.logger.info("Setting job state of job %s to %s" % (self.id, value))
             self.__state = value
