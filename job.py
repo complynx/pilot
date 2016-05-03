@@ -60,7 +60,7 @@ class Job(object):
         modifier = ""
         others = ""
         if isinstance(params, basestring):
-            splat = shlex.split(params, True)
+            splat = shlex.split(str(params), True)
             for key in splat:
                 if key.startswith('--overwriteQueuedata='):
                     modifier = key[len("--overwriteQueuedata="):]
