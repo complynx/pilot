@@ -3,6 +3,7 @@ import urllib
 import os
 import commands
 import json
+from job_description_fixer import description_fixer
 
 
 class Job:
@@ -21,77 +22,16 @@ class Job:
         self.pilot = _pilot
         if _pilot.args.no_job_update:
             self.no_update = True
-        self.description = _desc
+        self.description = description_fixer(_desc)
+        self.pilot.logger.debug(json.dumps(self.description, indent=4))
         self.parse_description()
 
     def parse_description(self):
-        self.id = self.description["PandaID"]
-        self.command = self.description["transformation"]+" "+self.description["jobPars"]
-
-        self.extract_input_files()
-        self.extract_output_files()
-        self.extract_log_file()
+        self.id = self.description["id"]
+        self.command = self.description["command"]+" "+self.description["command_parameters"]
 
     def convert_null(self, val):
         return val if val != "NULL" else None
-
-    def extract_input_files(self):
-        if self.description['inFiles'] and self.description['inFiles'] != "NULL":
-            in_files = self.description["inFiles"].split(',')
-            ddmEndPointIn = self.description["ddmEndPointIn"].split(',')
-            destinationSE = self.description["destinationSE"].split(',')
-            dispatchDBlockToken = self.description["dispatchDBlockToken"].split(',')
-            realDatasetsIn = self.description["realDatasetsIn"].split(',')
-            prodDBlocks = self.description["prodDBlocks"].split(',')
-            fsize = self.description["fsize"].split(',')
-            c_sum = self.description["checksum"].split(',')
-
-            for i, f in enumerate(in_files):
-                if f != "NULL":
-                    self.input_files[f] = {
-                        "ddm_endpoint": self.convert_null(ddmEndPointIn[i]),
-                        "destinationSE": self.convert_null(destinationSE[i]),
-                        "dispatchDBlockToken": self.convert_null(dispatchDBlockToken[i]),
-                        "realDataset": self.convert_null(realDatasetsIn[i]),
-                        "prodDBlock": self.convert_null(prodDBlocks[i]),
-                        "fsize": long(self.convert_null(fsize[i])),
-                        "checksum": self.convert_null(c_sum[i])
-                    }
-
-        self.pilot.logger.debug("extracted files: "+json.dumps(self.input_files, indent=4))
-
-    def extract_output_files(self):
-        if self.description['outFiles'] and self.description['outFiles'] != "NULL":
-            files = self.description["outFiles"].split(',')
-            ddmEndPointOut = self.description["ddmEndPointOut"].split(',')
-            fileDestinationSE = self.description["fileDestinationSE"].split(',')
-            dispatchDBlockTokenForOut = self.description["dispatchDBlockTokenForOut"].split(',')
-            destinationDBlockToken = self.description["destinationDBlockToken"].split(',')
-            realDatasets = self.description["realDatasets"].split(',')
-            destinationDblock = self.description["destinationDblock"].split(',')
-
-            for i, f in enumerate(files):
-                if f != "NULL":
-                    self.output_files[f] = {
-                        "ddm_endpoint": self.convert_null(ddmEndPointOut[i]),
-                        "destinationSE": self.convert_null(fileDestinationSE[i]),
-                        "dispatchDBlockToken": self.convert_null(dispatchDBlockTokenForOut[i]),
-                        "destinationDBlockToken": self.convert_null(destinationDBlockToken[i]),
-                        "realDataset": self.convert_null(realDatasets[i]),
-                        "destinationDblock": self.convert_null(destinationDblock[i])
-                    }
-
-        self.pilot.logger.debug("extracted files: "+json.dumps(self.output_files, indent=4))
-
-    def extract_log_file(self):
-        if self.description["logFile"] and self.description["logFile"] != "NULL":
-            self.log_file = self.description["logFile"]
-
-            if self.description["logGUID"] and self.description["logGUID"] != "NULL" and self.log_file in\
-                    self.output_files:
-                self.output_files[self.log_file]['GUID'] = self.description["logGUID"]
-
-        self.pilot.logger.debug("log file: "+self.log_file+" "+json.dumps(self.output_files[self.log_file], indent=4))
 
     @property
     def state(self):
