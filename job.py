@@ -39,7 +39,7 @@ class Job:
             ddmEndPointIn = self.description["ddmEndPointIn"].split(',')
             destinationSE = self.description["destinationSE"].split(',')
             dispatchDBlockToken = self.description["dispatchDBlockToken"].split(',')
-            realDataset = self.description["realDataset"].split(',')
+            realDatasetsIn = self.description["realDatasetsIn"].split(',')
             fsize = self.description["fsize"].split(',')
             checksum = self.description["checksum"].split(',')
 
@@ -49,7 +49,7 @@ class Job:
                     "ddm_endpoint": self.convert_null(ddmEndPointIn[i]),
                     "destinationSE": self.convert_null(destinationSE[i]),
                     "dispatchDBlockToken": self.convert_null(dispatchDBlockToken[i]),
-                    "realDataset": self.convert_null(realDataset[i]),
+                    "realDataset": self.convert_null(realDatasetsIn[i]),
                     "fsize": long(self.convert_null(fsize[i])),
                     "checksum": self.convert_null(checksum[i])
                 }
