@@ -41,7 +41,7 @@ class Job:
             ddmEndPointIn = self.description["ddmEndPointIn"].split(',')
             destinationSE = self.description["destinationSE"].split(',')
             dispatchDBlockToken = self.description["dispatchDBlockToken"].split(',')
-            realDatasetsIn = self.description["realDataseprodDBlockstsIn"].split(',')
+            realDatasetsIn = self.description["realDatasetsIn"].split(',')
             prodDBlocks = self.description["prodDBlocks"].split(',')
             fsize = self.description["fsize"].split(',')
             c_sum = self.description["checksum"].split(',')
