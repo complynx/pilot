@@ -12,8 +12,8 @@ class Job:
     error_code = None
     id = None
     command = 'ls'
-    input_files = []
-    output_files = []
+    input_files = {}
+    output_files = {}
     log_file = ''
     no_update = False
 
@@ -30,8 +30,8 @@ class Job:
 
         self.extract_input_files()
 
-    def convert_null(self, str):
-        return str if str != "NULL" else None
+    def convert_null(self, val):
+        return val if val != "NULL" else None
 
     def extract_input_files(self):
         if self.description['inFiles'] and self.description['inFiles'] != "NULL":
@@ -47,15 +47,19 @@ class Job:
             self.pilot.logger.debug(json.dumps(c_sum, indent=4))
 
             for i, f in enumerate(in_files):
-                self.input_files[i] = {
-                    "name": self.convert_null(f),
-                    "ddm_endpoint": self.convert_null(ddmEndPointIn[i]),
-                    "destinationSE": self.convert_null(destinationSE[i]),
-                    "dispatchDBlockToken": self.convert_null(dispatchDBlockToken[i]),
-                    "realDataset": self.convert_null(realDatasetsIn[i]),
-                    "fsize": long(self.convert_null(fsize[i])),
-                    "checksum": self.convert_null(c_sum[i])
-                }
+                if f != "NULL":
+                    self.pilot.logger.debug("%s %d %s %s %s %s %s %s" % (f, i, ddmEndPointIn[i], destinationSE[i],
+                                                                   dispatchDBlockToken[i], realDatasetsIn[i],
+                                                                   fsize[i], c_sum[i]
+                                                                   ))
+                    self.input_files[f] = {
+                        "ddm_endpoint": self.convert_null(ddmEndPointIn[i]),
+                        "destinationSE": self.convert_null(destinationSE[i]),
+                        "dispatchDBlockToken": self.convert_null(dispatchDBlockToken[i]),
+                        "realDataset": self.convert_null(realDatasetsIn[i]),
+                        "fsize": long(self.convert_null(fsize[i])),
+                        "checksum": self.convert_null(c_sum[i])
+                    }
 
         self.pilot.logger.debug("extracted files: "+json.dumps(self.input_files, indent=4))
 
