@@ -27,7 +27,7 @@ class Job:
         self.parse_description()
 
     def parse_description(self):
-        self.id = self.description["id"]
+        self.id = self.description["job_id"]
         self.command = self.description["command"]+" "+self.description["command_parameters"]
 
     def convert_null(self, val):

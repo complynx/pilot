@@ -1,12 +1,29 @@
+"""
+This file is a standalone job description converter from the old description to a proposed one.
+"""
+
 import re
 
 
 def camel_to_snake(name):
+    """
+    Changes CamelCase to snake_case, used by python.
+
+    :param name: name to change
+    :return: name in snake_case
+    """
     s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
     return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
 
 
 def split(val, separator=","):
+    """
+    Splits comma separated values and parses them.
+
+    :param val: values to split
+    :param separator: comma or whatever
+    :return: parsed values
+    """
     v_arr = val.split(separator)
 
     for i, v in enumerate(v_arr):
@@ -16,6 +33,11 @@ def split(val, separator=","):
 
 
 def get_nulls(val):
+    """
+    Makes every "NULL" None.
+    :param val: string or whatever
+    :return: val or None if val is "NULL"
+    """
     return val if val != "NULL" else None
 
 
@@ -44,6 +66,11 @@ skip_keys = [  # these are tested elsewhere
 
 
 def is_float(val):
+    """
+    Test floatliness of the value.
+    :param val: string or whatever
+    :return: True if the value may be converted to Float
+    """
     try:
         float(val)
         return True
@@ -52,12 +79,31 @@ def is_float(val):
 
 
 def is_long(s):
+    """
+    Test value to be convertable to integer.
+    :param s: string or whatever
+    :return: True if the value may be converted to Long
+    """
+    if not isinstance(s, basestring):
+        try:
+            long(s)
+            return True
+        except ValueError:
+            return False
+
     if s[0] in ('-', '+'):
         return s[1:].isdigit()
     return s.isdigit()
 
 
 def parse_value(value):
+    """
+    Tries to parse value as number or None. If some of this can be done, parsed value is returned. Otherwise returns
+    value without parsing.
+
+    :param value:
+    :return: mixed
+    """
     if not isinstance(value, basestring):
         return value
     if is_long(value):
@@ -68,14 +114,19 @@ def parse_value(value):
 
 
 def get_input_files(description):
+    """
+    Extracts input files from the description.
+    :param description:
+    :return: file list
+    """
     files = {}
     if description['inFiles'] and description['inFiles'] != "NULL":
         in_files = split(description["inFiles"])
         ddm_endpoint = split(description["ddmEndPointIn"])
         destination_se = split(description["destinationSE"])
-        data_block_token = split(description["dispatchDBlockToken"])
+        dblock_token = split(description["dispatchDBlockToken"])
         datasets = split(description["realDatasetsIn"])
-        data_blocks = split(description["prodDBlocks"])
+        dblocks = split(description["prodDBlocks"])
         size = split(description["fsize"])
         c_sum = split(description["checksum"])
         scope = parse_value(description["scopeIn"])
@@ -85,9 +136,9 @@ def get_input_files(description):
                 files[f] = {
                     "ddm_endpoint": ddm_endpoint[i],
                     "storage_element": destination_se[i],
-                    "dispatch_data_block_token": data_block_token[i],
+                    "dispatch_dblock_token": dblock_token[i],
                     "dataset": datasets[i],
-                    "data_block": data_blocks[i],
+                    "dblock": dblocks[i],
                     "size": size[i],
                     "checksum": c_sum[i],
                     'scope': scope
@@ -96,6 +147,12 @@ def get_input_files(description):
 
 
 def fix_log(description, files):
+    """
+    Fixes log file description in output files (changes GUID and scope).
+    :param description:
+    :param files: output files
+    :return: fixed output files
+    """
     if description["logFile"] and description["logFile"] != "NULL":
         if description["logGUID"] and description["logGUID"] != "NULL" and description["logFile"] in\
                     files:
@@ -106,15 +163,20 @@ def fix_log(description, files):
 
 
 def get_output_files(description):
+    """
+    Extracts output files from the description.
+    :param description:
+    :return: output files
+    """
     files = {}
     if description['outFiles'] and description['outFiles'] != "NULL":
         out_files = split(description["outFiles"])
         ddm_endpoint = split(description["ddmEndPointOut"])
         destination_se = split(description["fileDestinationSE"])
-        data_block_token = split(description["dispatchDBlockTokenForOut"])
-        destination_data_block_token = split(description["destinationDBlockToken"])
+        dblock_token = split(description["dispatchDBlockTokenForOut"])
+        destination_dblock_token = split(description["destinationDBlockToken"])
         datasets = split(description["realDatasets"])
-        data_blocks = split(description["destinationDblock"])
+        dblocks = split(description["destinationDblock"])
         scope = parse_value(description["scopeOut"])
 
         for i, f in enumerate(out_files):
@@ -122,10 +184,10 @@ def get_output_files(description):
                 files[f] = {
                     "ddm_endpoint": ddm_endpoint[i],
                     "storage_element": destination_se[i],
-                    "dispatch_data_block_token": data_block_token[i],
-                    "destination_data_block_token": destination_data_block_token[i],
+                    "dispatch_dblock_token": dblock_token[i],
+                    "destination_dblock_token": destination_dblock_token[i],
                     "dataset": datasets[i],
-                    "data_block": data_blocks[i],
+                    "dblock": dblocks[i],
                     "scope": scope
                 }
 
@@ -133,7 +195,16 @@ def get_output_files(description):
 
 
 def description_fixer(description):
+    """
+    Parses the description and changes it into more readable and usable way. For example, extracts all the files and
+    makes a structure of them.
+    :param description:
+    :return: fixed description
+    """
     fixed = {}
+    if isinstance(description, basestring):
+        import json
+        description = json.loads(description)
     for key in description:
         value = description[key]
 
