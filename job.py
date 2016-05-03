@@ -43,6 +43,7 @@ class Job(object):
         """
         self.pilot.logger.info("common setter")
         try:
+            old = object.__getattribute__(self, key)
             object.__setattr__(self, key, value)
         except AttributeError:
             if self.description is not None:
@@ -51,7 +52,7 @@ class Job(object):
                 elif self.description is not None and key in self.description:
                     self.description[key] = value
                 return
-            raise
+            object.__setattr__(self, key, value)
 
     def parse_description(self):
         self.pilot.logger.debug("id: %d" % self.id)
