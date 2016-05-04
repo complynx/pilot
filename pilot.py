@@ -16,6 +16,8 @@ import platform
 import pip
 import time
 import traceback
+import pipes
+from job_description_fixer import description_fixer
 
 
 class Pilot:
@@ -30,6 +32,7 @@ class Pilot:
     sslPath = ""
     sslCertOrPath = ""
     args = None
+    argv = None
     executable = __file__
     queuedata = None
 
@@ -126,7 +129,7 @@ class Pilot:
         """
         if self.args is not None:
             self.logger.info("Pilot is running.")
-            self.logger.info("Started with arguments %s" % vars(self.args))
+            self.logger.info("Started with: %s" % " ".join(pipes.quote(x) for x in self.argv))
         self.logger.info("User-Agent: " + self.user_agent)
 
         self.logger.info("Pilot is started from %s" % self.dir)
@@ -146,6 +149,7 @@ class Pilot:
         :return:
         """
         self.executable = argv[0]
+        self.argv = argv
         self.args = self.argParser.parse_args(argv[1:])
         self.init_after_arguments()
 
@@ -252,16 +256,23 @@ class Pilot:
         self.logger.info("Trying to get queuedata.")
         self.queuedata = self.try_get_json_file(self.args.queuedata)
         if self.queuedata is None:
+            self.queuedata = self.try_get_json_file("/cvmfs/atlas.cern.ch/repo/sw/local/etc/agis_ddmendpoints.json")
+        if self.queuedata is None:
             self.logger.info("Queuedata is not saved locally. Asking server.")
 
-            _str = self.curl_query("http://%s:%d/cache/schedconfig/%s.all.json" % (self.args.pandaserver,
-                                                                                   self.args.pandaserver_port,
-                                                                                   self.args.queue))
+            # _str = self.curl_query("http://%s:%d/cache/schedconfig/%s.all.json" % (self.args.pandaserver,
+            #                                                                        self.args.pandaserver_port,
+            #                                                                        self.args.queue))
 
-            self.queuedata = json.loads(_str)
+            _str = self.curl_query("http://atlas-agis-api.cern.ch/request/pandaqueue/query/list/?"
+                                   "json&preset=schedconf.all&panda_queue=%s" % self.args.queue)
+
+            confs = json.loads(_str)
+            if self.args.queue in confs:
+                self.queuedata = confs[self.args.queue]
 
         self.logger.info("Queuedata obtained.")
-        # self.logger.debug("queuedata: "+json.dumps(queuedata, indent=4))
+        self.logger.debug("queuedata: " + json.dumps(self.queuedata, indent=4, sort_keys=True))
 
     def get_job(self):
         """
@@ -302,9 +313,8 @@ class Pilot:
                 raise
 
         self.logger.info("Got job description.")
-        self.logger.debug("Job description: "+json.dumps(job_desc, indent=4))
         from job import Job
-        job = Job(self, job_desc)
+        job = Job(self, description_fixer(job_desc, logger=self.logger))
         return job
 
 

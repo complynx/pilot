@@ -1,8 +1,7 @@
 import urllib
 import os
-import commands
+import subprocess
 import json
-from job_description_fixer import description_fixer
 import shlex
 import pipes
 import re
@@ -22,7 +21,7 @@ class Job(object):
         self.pilot = _pilot
         if _pilot.args.no_job_update:
             self.no_update = True
-        self.description = description_fixer(_desc, logger=_pilot.logger)
+        self.description = _desc
         self.pilot.logger.debug(json.dumps(self.description, indent=4, sort_keys=True))
         self.parse_description()
 
@@ -175,7 +174,6 @@ class Job(object):
 
     def parse_description(self):
         self.modify_queuedata()
-        self.pilot.logger.debug("id: %d" % self.id)
 
     @property
     def state(self):
@@ -224,12 +222,23 @@ class Job(object):
 
         self.state = 'running'
 
-        self.pilot.logger.info("Starting job cmd: %s" % self.command)
-        s, o = commands.getstatusoutput(self.command)
+        args = shlex.split(self.command_parameters, True, True)
+        args.insert(0, self.command)
 
-        self.pilot.logger.info("Job ended with status: %d" % s)
-        self.pilot.logger.info("Job output:\n%s" % o)
-        self.error_code = s
+        self.pilot.logger.info("Starting job cmd: %s" % " ".join(pipes.quote(x) for x in args))
+
+        child = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        child_out = ''
+        child_err = ''
+        while child.returncode is None:
+            out, err = child.communicate()
+            child_out += out  # let's assume the output is not very long for now.
+            child_err += err
+
+        self.pilot.logger.info("Job ended with status: %d" % child.returncode)
+        self.pilot.logger.info("Job stdout:\n%s" % child_out)
+        self.pilot.logger.info("Job stderr:\n%s" % child_err)
+        self.error_code = child.returncode
 
         self.state = "holding"
         self.state = 'finished'
