@@ -329,7 +329,7 @@ def join_input_files(unfixed, input_files):
     unfixed['prodDBlockToken'] = join(dblock_tokens)
     unfixed['fsize'] = join(size)
     unfixed['checksum'] = join(c_sum)
-    unfixed['scopeIn'] = stringify_weird(scope)
+    unfixed['scopeIn'] = join(scope)
     unfixed['GUID'] = join(guid)
 
     return unfixed
