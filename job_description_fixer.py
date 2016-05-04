@@ -37,7 +37,7 @@ def snake_to_camel(snake_str):
     return components[0] + "".join(x.title() for x in components[1:])
 
 
-def split(val, separator=",", min_len=0):
+def split(val, separator=",", min_len=0, fill_last=False):
     """
     Splits comma separated values and parses them.
 
@@ -54,7 +54,8 @@ def split(val, separator=",", min_len=0):
         v_arr[i] = parse_value(v)
 
     if min_len > len(v_arr):
-        v_arr.extend([None for x in range(min_len-len(v_arr))])
+        filler = None if not fill_last or len(v_arr) < 1 else v_arr[0]
+        v_arr.extend([filler for x in range(min_len-len(v_arr))])
 
     return v_arr
 
@@ -186,19 +187,13 @@ def get_input_files(description):
         destination_se = split(description.get("destinationSE"), min_len=L)
         dispatch_dblock = split(description.get("dispatchDblock"), min_len=L)
         dispatch_dblock_token = split(description.get("dispatchDBlockToken"), min_len=L)
-        datasets = split(description.get("realDatasetsIn"))
+        datasets = split(description.get("realDatasetsIn"), min_len=L, fill_last=True)
         dblocks = split(description.get("prodDBlocks"), min_len=L)
         dblock_tokens = split(description.get("prodDBlockToken"), min_len=L)
         size = split(description.get("fsize"), min_len=L)
         c_sum = split(description.get("checksum"), min_len=L)
-        scope = parse_value(description.get("scopeIn"))
-        guids = split(description.get("GUID"))
-
-        if len(datasets) == 1:  # if dataset is only one, but many files.
-            datasets = [datasets[0] for x in in_files]
-
-        if len(guids) == 1:
-            guids = [guids[0] for x in in_files]
+        scope = split(description.get("scopeIn"), min_len=L, fill_last=True)
+        guids = split(description.get("GUID"), min_len=L, fill_last=True)
 
         for i, f in enumerate(in_files):
             if f is not None:
@@ -212,7 +207,7 @@ def get_input_files(description):
                     "dblock_token": dblock_tokens[i],
                     "size": size[i],
                     "checksum": c_sum[i],
-                    'scope': scope,
+                    'scope': scope[i],
                     "guid": guids[i]
                 }
     return files
@@ -253,7 +248,7 @@ def get_output_files(description):
         datasets = split(description.get("realDatasets"), min_len=L)
         dblocks = split(description.get("destinationDblock"), min_len=L)
         destination_dblock_token = split(description.get("destinationDBlockToken"), min_len=L)
-        scope = parse_value(description.get("scopeOut"))
+        scope = split(description.get("scopeOut"), min_len=L, fill_last=True)
 
         for i, f in enumerate(out_files):
             if f is not None:
@@ -265,7 +260,7 @@ def get_output_files(description):
                     "dblock_token": dblock_tokens[i],
                     "dataset": datasets[i],
                     "dblock": dblocks[i],
-                    "scope": scope
+                    "scope": scope[i]
                 }
 
     return fix_log(description, files)
@@ -308,7 +303,7 @@ def join_input_files(unfixed, input_files):
     size = []
     c_sum = []
     guid = []
-    scope = None
+    scope = []
 
     for i in input_files:
         in_files.append(i)
@@ -321,7 +316,7 @@ def join_input_files(unfixed, input_files):
         dblock_tokens.append(input_files[i]['dblock_token'])
         size.append(input_files[i]['size'])
         c_sum.append(input_files[i]['checksum'])
-        scope = input_files[i]['scope']  # in old description all files are in one scope, so we assume this
+        scope.append(input_files[i]['scope'])  # in old description all files are in one scope, so we assume this
         guid.append(input_files[i]['guid'])
 
     unfixed['inFiles'] = join(in_files)
@@ -356,7 +351,7 @@ def join_output_files(unfixed, output_files, log_file):
     datasets = []
     dblocks = []
     dblock_tokens = []
-    scope = None
+    scope = []
 
     for i in output_files:
         out_files.append(i)
@@ -368,7 +363,7 @@ def join_output_files(unfixed, output_files, log_file):
         dblocks.append(output_files[i]['dblock'])
         dblock_tokens.append(output_files[i]['dblock_token'])
         if i != log_file:
-            scope = output_files[i]['scope']  # in old description all files are in one scope, so we assume this
+            scope.append(output_files[i]['scope'])  # in old description all files are in one scope, so we assume this
 
     unfixed['outFiles'] = join(out_files)
     unfixed['ddmEndPointOut'] = join(ddm_endpoint)
@@ -378,7 +373,7 @@ def join_output_files(unfixed, output_files, log_file):
     unfixed['prodDBlockTokenForOut'] = join(dblock_tokens)
     unfixed['destinationDBlockToken'] = join(destination_dblock_token)
     unfixed['destinationDblock'] = join(dblocks)
-    unfixed['scopeOut'] = stringify_weird(scope)
+    unfixed['scopeOut'] = join(scope)
 
     return unfix_log_parameters(unfixed, output_files[log_file])
 
