@@ -83,7 +83,6 @@ key_fix = {
                                                 # USE PROPER NAMES!!!
     'maxCpuCount': 'maximum_cpu_usage_time',  # what does "count" mean? Processor versions used or what?
     'attemptNr': 'attempt_number',  # bad practice to strip words API needs to be readable
-    'prodDBlockToken': 'prod_dblock_token',  # camel_to_snake makes d_block, which is right, but heavier
 }
 
 arrays = []
@@ -94,7 +93,7 @@ skip_keys = [  # these are fixed elsewhere
                "checksum", "outFiles", "ddmEndPointOut", "fileDestinationSE", "dispatchDBlockTokenForOut",
                "destinationDBlockToken", "realDatasets", "destinationDblock", "logGUID", "scopeIn", "scopeOut",
                "scopeLog",
-               "GUID"
+               "GUID", 'prodDBlockToken', 'prodDBlockTokenForOut', "dispatchDblock"
 ]
 
 skip_new_keys = [  # these are fixed elsewhere
@@ -113,7 +112,6 @@ key_unfix = {
     'minimum_ram': 'minRamCount',
     'maximum_input_file_size': 'maxDiskCount',
     'attempt_number': 'attemptNr',
-    'prod_dblock_token': 'prodDBlockToken',
     'job_definition_id': 'jobDefinitionID',
     'task_id': 'taskID',
     'jobset_id': 'jobsetID',
@@ -186,7 +184,7 @@ def get_input_files(description):
         L = len(in_files)
         ddm_endpoint = split(description.get("ddmEndPointIn"), min_len=L)
         destination_se = split(description.get("destinationSE"), min_len=L)
-        dispatch_dblock = split(description.get("dispatchDBlock"), min_len=L)
+        dispatch_dblock = split(description.get("dispatchDblock"), min_len=L)
         dispatch_dblock_token = split(description.get("dispatchDBlockToken"), min_len=L)
         datasets = split(description.get("realDatasetsIn"))
         dblocks = split(description.get("prodDBlocks"), min_len=L)
@@ -302,6 +300,7 @@ def join_input_files(unfixed, input_files):
     in_files = []
     ddm_endpoint = []
     destination_se = []
+    dispatch_dblock = []
     dispatch_dblock_token = []
     datasets = []
     dblocks = []
@@ -315,6 +314,7 @@ def join_input_files(unfixed, input_files):
         in_files.append(i)
         ddm_endpoint.append(input_files[i]['ddm_endpoint'])
         destination_se.append(input_files[i]['storage_element'])
+        dispatch_dblock.append(input_files[i]['dispatch_dblock'])
         dispatch_dblock_token.append(input_files[i]['dispatch_dblock_token'])
         datasets.append(input_files[i]['dataset'])
         dblocks.append(input_files[i]['dblock'])
@@ -327,6 +327,7 @@ def join_input_files(unfixed, input_files):
     unfixed['inFiles'] = join(in_files)
     unfixed['ddmEndPointIn'] = join(ddm_endpoint)
     unfixed['destinationSE'] = join(destination_se)
+    unfixed['dispatchDblock'] = join(dispatch_dblock)
     unfixed['dispatchDBlockToken'] = join(dispatch_dblock_token)
     unfixed['realDatasetsIn'] = join(datasets)
     unfixed['prodDBlocks'] = join(dblocks)
