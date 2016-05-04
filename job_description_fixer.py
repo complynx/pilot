@@ -86,6 +86,8 @@ key_fix = {
     'prodDBlockToken': 'prod_dblock_token',  # camel_to_snake makes d_block, which is right, but heavier
 }
 
+arrays = []
+
 skip_keys = [  # these are fixed elsewhere
                'inFiles', "ddmEndPointIn", "destinationSE", "dispatchDBlockToken", "realDatasetsIn", "prodDBlocks",
                "fsize",
@@ -109,13 +111,14 @@ key_unfix = {
     'home_package': 'homepackage',
     "throttle": 'nSent',
     'minimum_ram': 'minRamCount',
-    'maximum_disk_space': 'maxDiskCount',
+    'maximum_input_file_size': 'maxDiskCount',
     'attempt_number': 'attemptNr',
     'prod_dblock_token': 'prodDBlockToken',
     'job_definition_id': 'jobDefinitionID',
     'task_id': 'taskID',
     'jobset_id': 'jobsetID',
     'status_code': 'StatusCode',
+    'maximum_cpu_usage_time': 'maxCpuCount'
 }
 
 key_explicit_strings = [
@@ -181,17 +184,17 @@ def get_input_files(description):
     if description['inFiles'] and description['inFiles'] != "NULL":
         in_files = split(description["inFiles"])
         L = len(in_files)
-        ddm_endpoint = split(description["ddmEndPointIn"], min_len=L)
-        destination_se = split(description["destinationSE"], min_len=L)
-        dispatch_dblock = split(description["dispatchDBlock"], min_len=L)
-        dispatch_dblock_token = split(description["dispatchDBlockToken"], min_len=L)
-        datasets = split(description["realDatasetsIn"])
-        dblocks = split(description["prodDBlocks"], min_len=L)
-        dblock_tokens = split(description["prodDBlockToken"], min_len=L)
-        size = split(description["fsize"], min_len=L)
-        c_sum = split(description["checksum"], min_len=L)
-        scope = parse_value(description["scopeIn"])
-        guids = split(description["GUID"])
+        ddm_endpoint = split(description.get("ddmEndPointIn"), min_len=L)
+        destination_se = split(description.get("destinationSE"), min_len=L)
+        dispatch_dblock = split(description.get("dispatchDBlock"), min_len=L)
+        dispatch_dblock_token = split(description.get("dispatchDBlockToken"), min_len=L)
+        datasets = split(description.get("realDatasetsIn"))
+        dblocks = split(description.get("prodDBlocks"), min_len=L)
+        dblock_tokens = split(description.get("prodDBlockToken"), min_len=L)
+        size = split(description.get("fsize"), min_len=L)
+        c_sum = split(description.get("checksum"), min_len=L)
+        scope = parse_value(description.get("scopeIn"))
+        guids = split(description.get("GUID"))
 
         if len(datasets) == 1:  # if dataset is only one, but many files.
             datasets = [datasets[0] for x in in_files]
@@ -208,7 +211,7 @@ def get_input_files(description):
                     "dispatch_dblock_token": dispatch_dblock_token[i],
                     "dataset": datasets[i],
                     "dblock": dblocks[i],
-                    "dblock_tokens": dblock_tokens[i],
+                    "dblock_token": dblock_tokens[i],
                     "size": size[i],
                     "checksum": c_sum[i],
                     'scope': scope,
@@ -245,14 +248,14 @@ def get_output_files(description):
     if description['outFiles'] and description['outFiles'] != "NULL":
         out_files = split(description["outFiles"])
         L = len(out_files)
-        ddm_endpoint = split(description["ddmEndPointOut"], min_len=L)
-        destination_se = split(description["fileDestinationSE"], min_len=L)
-        dblock_token = split(description["dispatchDBlockTokenForOut"], min_len=L)
-        dblock_tokens = split(description["prodDBlockTokenForOut"], min_len=L)
-        datasets = split(description["realDatasets"], min_len=L)
-        dblocks = split(description["destinationDblock"], min_len=L)
-        destination_dblock_token = split(description["destinationDBlockToken"], min_len=L)
-        scope = parse_value(description["scopeOut"])
+        ddm_endpoint = split(description.get("ddmEndPointOut"), min_len=L)
+        destination_se = split(description.get("fileDestinationSE"), min_len=L)
+        dblock_token = split(description.get("dispatchDBlockTokenForOut"), min_len=L)
+        dblock_tokens = split(description.get("prodDBlockTokenForOut"), min_len=L)
+        datasets = split(description.get("realDatasets"), min_len=L)
+        dblocks = split(description.get("destinationDblock"), min_len=L)
+        destination_dblock_token = split(description.get("destinationDBlockToken"), min_len=L)
+        scope = parse_value(description.get("scopeOut"))
 
         for i, f in enumerate(out_files):
             if f is not None:
@@ -299,9 +302,10 @@ def join_input_files(unfixed, input_files):
     in_files = []
     ddm_endpoint = []
     destination_se = []
-    dblock_token = []
+    dispatch_dblock_token = []
     datasets = []
     dblocks = []
+    dblock_tokens = []
     size = []
     c_sum = []
     guid = []
@@ -311,9 +315,10 @@ def join_input_files(unfixed, input_files):
         in_files.append(i)
         ddm_endpoint.append(input_files[i]['ddm_endpoint'])
         destination_se.append(input_files[i]['storage_element'])
-        dblock_token.append(input_files[i]['dispatch_dblock_token'])
+        dispatch_dblock_token.append(input_files[i]['dispatch_dblock_token'])
         datasets.append(input_files[i]['dataset'])
         dblocks.append(input_files[i]['dblock'])
+        dblock_tokens.append(input_files[i]['dblock_token'])
         size.append(input_files[i]['size'])
         c_sum.append(input_files[i]['checksum'])
         scope = input_files[i]['scope']  # in old description all files are in one scope, so we assume this
@@ -322,9 +327,10 @@ def join_input_files(unfixed, input_files):
     unfixed['inFiles'] = join(in_files)
     unfixed['ddmEndPointIn'] = join(ddm_endpoint)
     unfixed['destinationSE'] = join(destination_se)
-    unfixed['dispatchDBlockToken'] = join(dblock_token)
+    unfixed['dispatchDBlockToken'] = join(dispatch_dblock_token)
     unfixed['realDatasetsIn'] = join(datasets)
     unfixed['prodDBlocks'] = join(dblocks)
+    unfixed['prodDBlockToken'] = join(dblock_tokens)
     unfixed['fsize'] = join(size)
     unfixed['checksum'] = join(c_sum)
     unfixed['scopeIn'] = stringify_weird(scope)
@@ -344,28 +350,31 @@ def join_output_files(unfixed, output_files, log_file):
     out_files = []
     ddm_endpoint = []
     destination_se = []
-    dblock_token = []
+    dispatch_dblock_token = []
     destination_dblock_token = []
     datasets = []
     dblocks = []
+    dblock_tokens = []
     scope = None
 
     for i in output_files:
         out_files.append(i)
         ddm_endpoint.append(output_files[i]['ddm_endpoint'])
         destination_se.append(output_files[i]['storage_element'])
-        dblock_token.append(output_files[i]['dispatch_dblock_token'])
+        dispatch_dblock_token.append(output_files[i]['dispatch_dblock_token'])
         destination_dblock_token.append(output_files[i]['destination_dblock_token'])
         datasets.append(output_files[i]['dataset'])
         dblocks.append(output_files[i]['dblock'])
+        dblock_tokens.append(output_files[i]['dblock_token'])
         if i != log_file:
             scope = output_files[i]['scope']  # in old description all files are in one scope, so we assume this
 
     unfixed['outFiles'] = join(out_files)
     unfixed['ddmEndPointOut'] = join(ddm_endpoint)
     unfixed['fileDestinationSE'] = join(destination_se)
-    unfixed['dispatchDBlockTokenForOut'] = join(dblock_token)
+    unfixed['dispatchDBlockTokenForOut'] = join(dispatch_dblock_token)
     unfixed['realDatasets'] = join(datasets)
+    unfixed['prodDBlockTokenForOut'] = join(dblock_tokens)
     unfixed['destinationDBlockToken'] = join(destination_dblock_token)
     unfixed['destinationDblock'] = join(dblocks)
     unfixed['scopeOut'] = stringify_weird(scope)
