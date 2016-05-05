@@ -103,19 +103,19 @@ skip_new_keys = [  # these are fixed elsewhere
 
 key_unfix = {
     'job_id': 'PandaID',
+    'user_dn': 'prodUserID',
+    'task_id': 'taskID',  # all ID's are to be placed here, because snake case lacks of all-caps abbrev info
+    'jobset_id': 'jobsetID',
+    'job_definition_id': 'jobDefinitionID',
     'command': 'transformation',
     'command_parameters': 'jobPars',
     'cores_number': 'coreCount',
-    'user_dn': 'prodUserID',
     'label': 'prodSourceLabel',
     'home_package': 'homepackage',
     "throttle": 'nSent',
     'minimum_ram': 'minRamCount',
     'maximum_input_file_size': 'maxDiskCount',
     'attempt_number': 'attemptNr',
-    'job_definition_id': 'jobDefinitionID',
-    'task_id': 'taskID',
-    'jobset_id': 'jobsetID',
     'status_code': 'StatusCode',
     'maximum_cpu_usage_time': 'maxCpuCount'
 }

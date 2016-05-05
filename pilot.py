@@ -286,12 +286,12 @@ class Pilot:
             self.logger.info("Job description is not saved locally. Asking server.")
             cpu_info = cpuinfo.get_cpu_info()
             mem_info = psutil.virtual_memory()
-            disk_space = float(psutil.disk_usage(".").total)/1024./1024.
+            disk_space = float(psutil.disk_usage(".").total) / 1024. / 1024.
             # diskSpace = min(diskSpace, 14336)  # I doubt this is necessary, so RM
 
             data = {
-                'cpu': float(cpu_info['hz_actual_raw'][0])/1000000.,
-                'mem': float(mem_info.total)/1024./1024.,
+                'cpu': float(cpu_info['hz_actual_raw'][0]) / 1000000.,
+                'mem': float(mem_info.total) / 1024. / 1024.,
                 'node': self.node_name,
                 'diskSpace': disk_space,
                 'getProxyKey': False,  # do we need it?
