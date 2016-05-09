@@ -5,6 +5,7 @@ import json
 import shlex
 import pipes
 import re
+import logging
 
 
 class Job(object):
@@ -16,13 +17,18 @@ class Job(object):
     description_aliases = {
         'id': 'job_id'
     }
+    acceptable_log_wrappers = ["tar", "tgz", "gz", "gzip", "tbz2", "bz2", "bzip2"]
+    log_file = 'stub.job.log'
+    log_wrapper = '.tgz'
+    log = logging.getLogger()
 
     def __init__(self, _pilot, _desc):
+        self.log = logging.getLogger('pilot.jobmanager')
         self.pilot = _pilot
         if _pilot.args.no_job_update:
             self.no_update = True
         self.description = _desc
-        self.pilot.logger.debug(json.dumps(self.description, indent=4, sort_keys=True))
+        self.log.debug(json.dumps(self.description, indent=4, sort_keys=True))
         self.parse_description()
 
     def __getattr__(self, item):
@@ -76,7 +82,7 @@ class Job(object):
 
             # remove the overwriteQueuedata command from the job parameters
             job_parameters = job_parameters.replace(full_update_string[0], "")
-            self.pilot.logger.info("Removed the queuedata overwrite command from job parameters: %s" % job_parameters)
+            self.log.info("Removed the queuedata overwrite command from job parameters: %s" % job_parameters)
 
             # define regexp pattern for the full overwrite command
             pattern = re.compile(r'\-\-overwriteQueuedata=\{(.+)\}')
@@ -93,7 +99,7 @@ class Job(object):
 
                 comma_dictionary = {}
                 if "\'" in pairs[0] or '\"' in pairs[0]:
-                    self.pilot.logger.info("Detected quotation marks in the job parameters: %s" % (pairs[0]))
+                    log.info("Detected quotation marks in the job parameters: %s" % (pairs[0]))
                     # e.g. key1=value1,key2=value2,key3='value3,value4'
 
                     # handle quoted key-values separately
@@ -117,8 +123,8 @@ class Job(object):
                         comma_dictionary[key] = commaValue
                         pairs[0] = pairs[0].replace('\"' + commaValue + '\"', key)
 
-                    self.pilot.logger.info("pairs=%s" % (pairs[0]))
-                    self.pilot.logger.info("comma_dictionary=%s" % str(comma_dictionary))
+                    self.log.info("pairs=%s" % (pairs[0]))
+                    self.log.info("comma_dictionary=%s" % str(comma_dictionary))
 
                 # define the regexp pattern for the actual key=value pairs
                 # full backslash escape, see (adjusted for python):
@@ -131,7 +137,7 @@ class Job(object):
 
                 # put the extracted pairs in a proper dictionary
                 if kv_ist:
-                    self.pilot.logger.info("Extracted the following key value pairs from job parameters: %s" %
+                    self.log.info("Extracted the following key value pairs from job parameters: %s" %
                                            str(kv_ist))
 
                     for key, value in kv_ist:
@@ -143,15 +149,15 @@ class Job(object):
 
                             queuedata_update_dict[key] = value
                         else:
-                            self.pilot.logger.warning("Bad key detected in key value tuple: %s" % str((key, value)))
+                            self.log.warning("Bad key detected in key value tuple: %s" % str((key, value)))
                 else:
-                    self.pilot.logger.warning("!!WARNING!!1223!! Failed to extract the key value pair list from: %s"
+                    self.log.warning("!!WARNING!!1223!! Failed to extract the key value pair list from: %s"
                                               % (pairs[0]))
             else:
-                self.pilot.logger.warning("!!WARNING!!1223!! Failed to extract the key value pairs from: %s" %
+                self.log.warning("!!WARNING!!1223!! Failed to extract the key value pairs from: %s" %
                                           (pairs[0]))
         else:
-            self.pilot.logger.warning("!!WARNING!!1223!! Failed to extract the full queuedata overwrite command from "
+            self.log.warning("!!WARNING!!1223!! Failed to extract the full queuedata overwrite command from "
                                       "jobParameters=%s" % job_parameters)
 
         return job_parameters, queuedata_update_dict
@@ -163,16 +169,44 @@ class Job(object):
         if isinstance(params, basestring) and '--overwriteQueuedata=' in params:
             others, modifier = self.extract_queuedata_updates(str(params))
 
-            self.pilot.logger.debug("overwrite: %s" % (modifier))
-            self.pilot.logger.debug("params: %s" % (others))
+            self.log.debug("overwrite: %s" % (modifier))
+            self.log.debug("params: %s" % (others))
 
             for key in modifier:
                 self.pilot.queuedata[key] = modifier[key]
 
-            self.pilot.logger.info("queuedata modified.")
-            self.pilot.logger.debug("queuedata: " + json.dumps(self.pilot.queuedata, indent=4))
+            self.log.info("queuedata modified.")
+            self.log.debug("queuedata: " + json.dumps(self.pilot.queuedata, indent=4))
+
+    def init_logging(self):
+        log_basename = self.description["log_file"]
+
+        log_file = ''
+        log_wrapper = ''
+
+        for ext in self.acceptable_log_wrappers:
+            if log_file != '':
+                break
+            log_file, dot_ext, rest = log_basename.rpartition("." + ext)
+            log_wrapper = dot_ext + rest
+
+        if log_file == '':
+            log_file = log_basename
+            log_wrapper = ''
+
+        h = logging.FileHandler(log_file, "w")
+        h.formatter = self.log.handlers.pop().formatter
+        lvl = self.log.getEffectiveLevel()
+        h.setLevel(lvl)
+        self.log.setLevel(logging.NOTSET)  # save debug and others to higher levels.
+        self.log.handlers.append(h)
+        self.log_wrapper = log_wrapper
+        self.log_file = log_file
+
+        self.log.info("Using job log file " + log_file + " with effective level " + logging.getLevelName(lvl))
 
     def parse_description(self):
+        self.init_logging()
         self.modify_queuedata()
 
     @property
@@ -184,7 +218,7 @@ class Job(object):
         Sends job state to the dedicated panda server.
         """
         if not self.no_update:
-            self.pilot.logger.info("Updating server job status...")
+            self.log.info("Updating server job status...")
             data = {
                 'node': self.pilot.node_name,
                 'state': self.state,
@@ -200,7 +234,7 @@ class Job(object):
             _str = self.pilot.curl_query("https://%s:%d/server/panda/updateJob" % (self.pilot.args.jobserver,
                                                                                    self.pilot.args.jobserver_port),
                                          ssl=True, body=urllib.urlencode(data))
-            self.pilot.logger.debug("Got from server: " + _str)
+            self.log.debug("Got from server: " + _str)
             # jobDesc = json.loads(_str)
             # self.logger.info("Got from server: " % json.dumps(jobDesc, indent=4))
 
@@ -212,7 +246,7 @@ class Job(object):
         :param value: new job state.
         """
         if value != self.__state:
-            self.pilot.logger.info("Setting job state of job %s to %s" % (self.id, value))
+            self.log.info("Setting job state of job %s to %s" % (self.id, value))
             self.__state = value
             self.send_state()
 
@@ -225,7 +259,7 @@ class Job(object):
         args = shlex.split(self.command_parameters, True, True)
         args.insert(0, self.command)
 
-        self.pilot.logger.info("Starting job cmd: %s" % " ".join(pipes.quote(x) for x in args))
+        self.log.info("Starting job cmd: %s" % " ".join(pipes.quote(x) for x in args))
 
         child = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         child_out = ''
@@ -235,9 +269,9 @@ class Job(object):
             child_out += out  # let's assume the output is not very long for now.
             child_err += err
 
-        self.pilot.logger.info("Job ended with status: %d" % child.returncode)
-        self.pilot.logger.info("Job stdout:\n%s" % child_out)
-        self.pilot.logger.info("Job stderr:\n%s" % child_err)
+        self.log.info("Job ended with status: %d" % child.returncode)
+        self.log.info("Job stdout:\n%s" % child_out)
+        self.log.info("Job stderr:\n%s" % child_err)
         self.error_code = child.returncode
 
         self.state = "holding"

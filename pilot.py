@@ -19,6 +19,9 @@ import traceback
 import pipes
 from job_description_fixer import description_fixer
 
+logging.basicConfig()
+log = logging.getLogger()
+
 
 class Pilot:
     """
@@ -113,6 +116,8 @@ class Pilot:
         Second step of initialization. After arguments received, pilot needs to set up some other variables.
         :return:
         """
+        global log
+
         if os.path.exists(self.args.cacert):
             self.sslCert = self.args.cacert
         if os.path.exists(self.args.capath):
@@ -121,6 +126,7 @@ class Pilot:
         self.sslCertOrPath = self.sslCert if self.sslCert != "" else self.sslPath
 
         self.logger = logging.getLogger("pilot")
+        log = self.logger
 
     def print_initial_information(self):
         """
@@ -128,19 +134,19 @@ class Pilot:
         :return:
         """
         if self.args is not None:
-            self.logger.info("Pilot is running.")
-            self.logger.info("Started with: %s" % " ".join(pipes.quote(x) for x in self.argv))
-        self.logger.info("User-Agent: " + self.user_agent)
+            log.info("Pilot is running.")
+            log.info("Started with: %s" % " ".join(pipes.quote(x) for x in self.argv))
+        log.info("User-Agent: " + self.user_agent)
 
-        self.logger.info("Pilot is started from %s" % self.dir)
-        self.logger.info("Working directory is %s" % os.getcwd())
+        log.info("Pilot is started from %s" % self.dir)
+        log.info("Working directory is %s" % os.getcwd())
 
-        self.logger.info("Printing requirements versions...")
+        log.info("Printing requirements versions...")
         requirements = pip.req.parse_requirements(os.path.join(self.dir,
                                                                "requirements.txt"),
                                                   session=False)
         for req in requirements:
-            self.logger.info("%s (%s)" % (req.name, req.installed_version))
+            log.info("%s (%s)" % (req.name, req.installed_version))
 
     def run(self, argv):
         """
@@ -161,8 +167,8 @@ class Pilot:
             job = self.get_job()
             job.run()
         except:
-            self.logger.error("During the run encountered uncaught exception.")
-            self.logger.error(traceback.format_exc())
+            log.error("During the run encountered uncaught exception.")
+            log.error(traceback.format_exc())
             pass
 
     @staticmethod
@@ -237,15 +243,15 @@ class Pilot:
         :return: parsed JSON object or None on failure.
         """
         if isinstance(file_name, basestring) and file_name != "" and os.path.isfile(file_name):
-            self.logger.info("Trying to fetch JSON local file %s." % file_name)
+            log.info("Trying to fetch JSON local file %s." % file_name)
             try:
                 with open(file_name) as f:
                     j = json.load(f)
-                    self.logger.info("Successfully loaded file and parsed.")
+                    log.info("Successfully loaded file and parsed.")
                     return j
             except Exception as e:
-                self.logger.warning(str(e))
-                self.logger.warning("File loading and parsing failed.")
+                log.warning(str(e))
+                log.warning("File loading and parsing failed.")
                 pass
         return None
 
@@ -253,12 +259,12 @@ class Pilot:
         """
         Retrieve queuedata from file or from server and store it into Pilot.queuedata.
         """
-        self.logger.info("Trying to get queuedata.")
+        log.info("Trying to get queuedata.")
         self.queuedata = self.try_get_json_file(self.args.queuedata)
         if self.queuedata is None:
             self.queuedata = self.try_get_json_file("/cvmfs/atlas.cern.ch/repo/sw/local/etc/agis_ddmendpoints.json")
         if self.queuedata is None:
-            self.logger.info("Queuedata is not saved locally. Asking server.")
+            log.info("Queuedata is not saved locally. Asking server.")
 
             # _str = self.curl_query("http://%s:%d/cache/schedconfig/%s.all.json" % (self.args.pandaserver,
             #                                                                        self.args.pandaserver_port,
@@ -271,8 +277,8 @@ class Pilot:
             if self.args.queue in confs:
                 self.queuedata = confs[self.args.queue]
 
-        self.logger.info("Queuedata obtained.")
-        self.logger.debug("queuedata: " + json.dumps(self.queuedata, indent=4, sort_keys=True))
+        log.info("Queuedata obtained.")
+        log.debug("queuedata: " + json.dumps(self.queuedata, indent=4, sort_keys=True))
 
     def get_job(self):
         """
@@ -280,10 +286,10 @@ class Pilot:
 
         :return: job description.
         """
-        self.logger.info("Trying to get job description.")
+        log.info("Trying to get job description.")
         job_desc = self.try_get_json_file(self.args.job_description)
         if job_desc is None:
-            self.logger.info("Job description is not saved locally. Asking server.")
+            log.info("Job description is not saved locally. Asking server.")
             cpu_info = cpuinfo.get_cpu_info()
             mem_info = psutil.virtual_memory()
             disk_space = float(psutil.disk_usage(".").total) / 1024. / 1024.
@@ -304,17 +310,17 @@ class Pilot:
             _str = self.curl_query("https://%s:%d/server/panda/updateJob" % (self.args.jobserver,
                                                                              self.args.jobserver_port),
                                    ssl=True, body=urllib.urlencode(data))
-            # self.logger.debug("Got from server: "+_str)
+            # log.debug("Got from server: "+_str)
             try:
                 job_desc = json.loads(_str)
             except ValueError:
-                self.logger.error("JSON parser failed.")
-                self.logger.error("Got from server: "+_str)
+                log.error("JSON parser failed.")
+                log.error("Got from server: "+_str)
                 raise
 
-        self.logger.info("Got job description.")
+        log.info("Got job description.")
         from job import Job
-        job = Job(self, description_fixer(job_desc, logger=self.logger))
+        job = Job(self, description_fixer(job_desc))
         return job
 
 

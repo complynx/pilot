@@ -7,8 +7,7 @@ import logging
 import json
 import numbers
 
-logging.basicConfig()
-log = logging.getLogger()
+log = logging.getLogger('job_description_fixer')
 DEBUG = False
 CONSOLE = False
 
@@ -496,6 +495,8 @@ if __name__ == "__main__":
     import argparse
     import sys
     import os
+
+    logging.basicConfig()
 
     CONSOLE = True
 
