@@ -8,6 +8,21 @@ import re
 import logging
 
 
+class LoggingContext(object):
+    def __init__(self, handler, level=None):
+        self.level = level
+        self.handler = handler
+
+    def __enter__(self):
+        if self.level is not None:
+            self.old_level = self.handler.level
+            self.handler.setLevel(self.level)
+
+    def __exit__(self, et, ev, tb):
+        if self.level is not None:
+            self.handler.setLevel(self.old_level)
+
+
 class Job(object):
     """
     This class holds a job and helps with it.
@@ -62,7 +77,7 @@ class Job(object):
         if _pilot.args.no_job_update:
             self.no_update = True
         self.description = _desc
-        self.log.debug(json.dumps(self.description, indent=4, sort_keys=True))
+        _pilot.logger.debug(json.dumps(self.description, indent=4, sort_keys=True))
         self.parse_description()
 
     def __getattr__(self, item):
@@ -241,9 +256,12 @@ class Job(object):
             Job.log_level = lvl
         else:
             lvl = Job.log_level
+
+        h.formatter = Job.log_formatter
+
         if lvl > logging.NOTSET:
             h.setLevel(lvl)
-        h.formatter = Job.log_formatter
+
         self.log.setLevel(logging.NOTSET)  # save debug and others to higher levels.
 
         root_log = logging.getLogger()
@@ -253,7 +271,10 @@ class Job(object):
         self.log_file = log_file
         self.log_handler = h
 
-        self.log.info("Using job log file " + log_file + " with effective level " + logging.getLevelName(lvl))
+        with LoggingContext(h, logging.NOTSET):
+            self.log.info("Using job log file " + self.log_file)
+            self.log.info("Pilot user-agent: " + self.pilot.user_agent)
+            self.log.info("Using effective log level " + logging.getLevelName(lvl))
 
     def parse_description(self):
         """
@@ -306,6 +327,55 @@ class Job(object):
             self.__state = value
             self.send_state()
 
+    def prepare_log(self, include_files=None):
+        with LoggingContext(self.log_handler, logging.NOTSET):
+            import shutil
+            full_log_name = self.log_file + self.log_archive
+
+            self.log.info("Preparing log file to send.")
+
+            if os.path.isfile(full_log_name) and self.log_file != full_log_name:
+                os.remove(full_log_name)
+
+            mode = "w"
+            if self.log_archive.find("g") >= 0:
+                self.log.info("Detected compression gzip.")
+                mode += ":gz"
+                from gzip import open as compressor
+            elif self.log_archive.find("2") >= 0:
+                self.log.info("Detected compression bzip2.")
+                mode += ":bz2"
+                from bz2 import BZ2File as compressor
+
+            if self.log_archive.find("t") >= 0:
+                self.log.info("Detected log archive: tar.")
+                import tarfile
+
+                with tarfile.open(full_log_name, mode) as tar:
+                    if include_files is not None:
+                        for f in include_files:
+                            if os.path.exists(f):
+                                self.log.info("Adding file %s" % f)
+                                tar.add(f)
+                    self.log.info("Adding log file... (must be end of log)")
+                    tar.add(self.log_file)
+
+                self.log.info("Finalizing log file.")
+                tar.close()
+
+            elif mode != "w":  # compressor
+                self.log.info("Compressing log file... (must be end of log)")
+                with open(self.log_file, 'rb') as f_in, compressor(full_log_name, 'wb') as f_out:
+                    shutil.copyfileobj(f_in, f_out)
+
+            elif self.log_file != full_log_name:
+                self.log.warn("Compression is not known, assuming no compression.")
+                self.log.info("Copying log file... (must be end of log)")
+
+                shutil.copyfile(self.log_file, full_log_name)
+
+        self.log.info("Log file prepared for stageout.")
+
     def run(self):
         """
         Main code of job manager.
@@ -336,4 +406,5 @@ class Job(object):
         self.error_code = child.returncode
 
         self.state = "holding"
+        self.prepare_log()
         self.state = 'finished'

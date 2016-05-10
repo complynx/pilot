@@ -72,11 +72,10 @@ def get_nulls(val):
     return val if val != "NULL" else None
 
 
+"""
+forward key modifications
+"""
 key_fix = {
-    """
-    forward key modifications
-    """
-
     'PandaID': 'job_id',  # it is job id, not PanDA
     'transformation': 'command',  # making it more convenient
     'jobPars': 'command_parameters',  # -.-
@@ -93,24 +92,20 @@ key_fix = {
     'attemptNr': 'attempt_number',  # bad practice to strip words API needs to be readable
 }
 
-arrays = [
-    """
-    keys to be threatened as arrays
-    """
-]
+"""
+keys to be threatened as arrays
+"""
+arrays = []
 
-key_explicit_strings = [
-    """
-    Keys, explicitly threatened as strings, even if they are all-digit or NULL
-    """
+"""
+Keys, explicitly threatened as strings, even if they are all-digit or NULL
+"""
+key_explicit_strings = []
 
-]
-
+"""
+Keys, excluded from key conversion. May be converted elsewhere.
+"""
 skip_keys = [
-    """
-    Keys, excluded from key conversion. May be converted elsewhere.
-    """
-
     'inFiles', "ddmEndPointIn", "destinationSE", "dispatchDBlockToken", "realDatasetsIn", "prodDBlocks",
     "fsize",
     "checksum", "outFiles", "ddmEndPointOut", "fileDestinationSE", "dispatchDBlockTokenForOut",
@@ -119,20 +114,18 @@ skip_keys = [
     "GUID", 'prodDBlockToken', 'prodDBlockTokenForOut', "dispatchDblock"
 ]
 
+"""
+Keys, excluded from backward key conversion. May be converted elsewhere.
+"""
 skip_new_keys = [
-    """
-    Keys, excluded from backward key conversion. May be converted elsewhere.
-    """
-
     'input_files', "output_files"
 ]
 
+"""
+Backward key modifications.
+Notice every all-caps abbreviations, they have to be here.
+"""
 key_unfix = {
-    """
-    Backward key modifications.
-    Notice every all-caps abbreviations, they have to be here.
-    """
-
     'job_id': 'PandaID',
     'user_dn': 'prodUserID',
     'task_id': 'taskID',  # all ID's are to be placed here, because snake case lacks of all-caps abbrev info
