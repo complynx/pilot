@@ -9,18 +9,52 @@ import logging
 
 
 class Job(object):
-    __state = "sent"
+    """
+    This class holds a job and helps with it.
+    Class presents also an interface to job description. Each field in it is mirrored to this class if there is no other
+    specific variable, that shadows it.
+    For example, job_id will be mirrored, but log_file would not, because there is specific class instance property,
+    shadowing it.
+    Every shadowing property should have exactly the same meaning and a great reason to shadow the one from description.
+    Every such property must be documented.
+
+    Attributes:
+        id                      Alias to job_id
+        state                   Job last state
+        pilot                   Link to Pilot class instance
+        description             Job description
+        error_code              Job payload exit code
+        no_update               Flag, specifying whether we will update server
+        log_file                Job dedicated log file, into which the logs _are_ written. Shadowing log_file from
+                                description, because that file is not a log file, but an archive containing it.
+                                Moreover, log_file from description may contain not only log file.
+                                :Shadowing property:
+        log_archive             Detected archive extension. Mostly ".tgz"
+        log                     Logger, used by class members.
+        log_handler             File handler of real log file for logging. Added to root logger to catch outer calls.
+        log_level               Filter used by handler to filter out unnecessary logging data.
+                                Acquired from ''pilot.jobmanager'' logger configuration.
+                                :Static:
+        log_formatter           Formatter used by log handlers.
+                                Acquired from ''pilot.jobmanager'' logger configuration.
+                                :Static:
+    """
     pilot = None
     description = None
     error_code = None
     no_update = False
-    description_aliases = {
+    log_file = 'stub.job.log'
+    log_archive = '.tgz'
+    log = logging.getLogger()
+    log_handler = None
+    log_level = None
+    log_formatter = None
+
+    __state = "sent"
+    __description_aliases = {
         'id': 'job_id'
     }
-    acceptable_log_wrappers = ["tar", "tgz", "gz", "gzip", "tbz2", "bz2", "bzip2"]
-    log_file = 'stub.job.log'
-    log_wrapper = '.tgz'
-    log = logging.getLogger()
+    __acceptable_log_wrappers = ["tar", "tgz", "gz", "gzip", "tbz2", "bz2", "bzip2"]
 
     def __init__(self, _pilot, _desc):
         self.log = logging.getLogger('pilot.jobmanager')
@@ -39,8 +73,8 @@ class Job(object):
             return object.__getattribute__(self, item)
         except AttributeError:
             if self.description is not None:
-                if item in self.description_aliases:
-                    return self.description[self.description_aliases[item]]
+                if item in self.__description_aliases:
+                    return self.description[self.__description_aliases[item]]
                 if item in self.description:
                     return self.description[item]
             raise
@@ -54,8 +88,8 @@ class Job(object):
             object.__setattr__(self, key, value)
         except AttributeError:
             if self.description is not None:
-                if key in self.description_aliases:
-                    self.description[self.description_aliases[key]] = value
+                if key in self.__description_aliases:
+                    self.description[self.__description_aliases[key]] = value
                 elif self.description is not None and key in self.description:
                     self.description[key] = value
                 return
@@ -63,9 +97,11 @@ class Job(object):
 
     def extract_queuedata_updates(self, job_parameters):
         """
-        Extract the queuedata overwrite key=value pairs from the job parameters.
+        Extracts the queuedata-overwrite key=value pairs from the job parameters.
         Port from previous version, because this thing is not posix-compliant.
         Also it works awfully unpredictable, so I don't lke the whole of it.
+        Ported _only_ for back-compatibility of job descriptions.
+        Must be reworked.
         """
         # The dictionary will be used to overwrite existing queuedata values
         # --overwriteQueuedata={key1=value1,key2=value2}
@@ -99,7 +135,7 @@ class Job(object):
 
                 comma_dictionary = {}
                 if "\'" in pairs[0] or '\"' in pairs[0]:
-                    log.info("Detected quotation marks in the job parameters: %s" % (pairs[0]))
+                    self.log.info("Detected quotation marks in the job parameters: %s" % (pairs[0]))
                     # e.g. key1=value1,key2=value2,key3='value3,value4'
 
                     # handle quoted key-values separately
@@ -137,8 +173,7 @@ class Job(object):
 
                 # put the extracted pairs in a proper dictionary
                 if kv_ist:
-                    self.log.info("Extracted the following key value pairs from job parameters: %s" %
-                                           str(kv_ist))
+                    self.log.info("Extracted the following key value pairs from job parameters: %s" % str(kv_ist))
 
                     for key, value in kv_ist:
 
@@ -151,18 +186,19 @@ class Job(object):
                         else:
                             self.log.warning("Bad key detected in key value tuple: %s" % str((key, value)))
                 else:
-                    self.log.warning("!!WARNING!!1223!! Failed to extract the key value pair list from: %s"
-                                              % (pairs[0]))
+                    self.log.warning("Failed to extract the key value pair list from: %s" % (pairs[0]))
             else:
-                self.log.warning("!!WARNING!!1223!! Failed to extract the key value pairs from: %s" %
-                                          (pairs[0]))
+                self.log.warning("Failed to extract the key value pairs from: %s" % (pairs[0]))
         else:
-            self.log.warning("!!WARNING!!1223!! Failed to extract the full queuedata overwrite command from "
-                                      "jobParameters=%s" % job_parameters)
+            self.log.warning("Failed to extract the full queuedata overwrite command from jobParameters=%s" %
+                             job_parameters)
 
         return job_parameters, queuedata_update_dict
 
     def modify_queuedata(self):
+        """
+        Finds and parses parameters to be overwritten, then modifies queuedata accordingly.
+        """
         params = self.command_parameters
         modifier = {}
         others = ""
@@ -179,38 +215,58 @@ class Job(object):
             self.log.debug("queuedata: " + json.dumps(self.pilot.queuedata, indent=4))
 
     def init_logging(self):
+        """
+        Sets up logger handler for specified job log file. Beforehand it extracts job log file's real name and it's
+        archive extension.
+        """
         log_basename = self.description["log_file"]
 
         log_file = ''
-        log_wrapper = ''
+        log_archive = ''
 
-        for ext in self.acceptable_log_wrappers:
+        for ext in self.__acceptable_log_wrappers:
             if log_file != '':
                 break
             log_file, dot_ext, rest = log_basename.rpartition("." + ext)
-            log_wrapper = dot_ext + rest
+            log_archive = dot_ext + rest
 
         if log_file == '':
             log_file = log_basename
-            log_wrapper = ''
+            log_archive = ''
 
         h = logging.FileHandler(log_file, "w")
-        h.formatter = self.log.handlers.pop().formatter
-        lvl = self.log.getEffectiveLevel()
-        h.setLevel(lvl)
+        if Job.log_level is None:
+            Job.log_formatter = self.log.handlers.pop().formatter
+            lvl = self.log.getEffectiveLevel()
+            Job.log_level = lvl
+        else:
+            lvl = Job.log_level
+        if lvl > logging.NOTSET:
+            h.setLevel(lvl)
+        h.formatter = Job.log_formatter
         self.log.setLevel(logging.NOTSET)  # save debug and others to higher levels.
-        self.log.handlers.append(h)
-        self.log_wrapper = log_wrapper
+
+        root_log = logging.getLogger()
+        root_log.handlers.append(h)
+
+        self.log_archive = log_archive
         self.log_file = log_file
+        self.log_handler = h
 
         self.log.info("Using job log file " + log_file + " with effective level " + logging.getLevelName(lvl))
 
     def parse_description(self):
+        """
+        Initializes description induced configurations: log handlers, queuedata modifications, etc.
+        """
         self.init_logging()
         self.modify_queuedata()
 
     @property
     def state(self):
+        """
+        :return: Last job state
+        """
         return self.__state
 
     def send_state(self):
@@ -251,6 +307,11 @@ class Job(object):
             self.send_state()
 
     def run(self):
+        """
+        Main code of job manager.
+
+        Stages in, executes and stages out the job.
+        """
         self.state = 'starting'
         self.state = 'stagein'
 

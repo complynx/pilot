@@ -94,8 +94,7 @@ class Pilot:
                                     metavar="tag")
         self.argParser.add_argument("--job_description", default=None,
                                     type=lambda x: x if os.path.isfile(x) else None,
-                                    help="Job description file, preloaded from server. The contents must be "
-                                         "application/x-www-form-urlencoded string. Later may be JSON also.",
+                                    help="Job description file, preloaded from server. The contents must be JSON.",
                                     metavar="tag")
         self.argParser.add_argument("--no_job_update", action='store_true',
                                     help="Disable job server updates")

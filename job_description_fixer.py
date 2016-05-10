@@ -25,7 +25,7 @@ def camel_to_snake(name):
 
 def snake_to_camel(snake_str):
     """
-    Changes snake_case to firstLowCamelCase, used by python.
+    Changes snake_case to firstLowCamelCase, used by server.
 
     :param name: name to change
     :return: name in snake_case
@@ -40,9 +40,12 @@ def split(val, separator=",", min_len=0, fill_last=False):
     """
     Splits comma separated values and parses them.
 
-    :param val: values to split
-    :param separator: comma or whatever
-    :return: parsed values
+    :param val:         values to split
+    :param separator:   comma or whatever
+    :param min_len:     minimum needed length of array, array is filled up to this value
+    :param fill_last:   Flag stating the array filler, if min_value is greater then extracted array length.
+                        If true, array is filled with last value, else, with Nones.
+    :return: parsed array
     """
     if val is None:
         return [None for x in range(min_len)]
@@ -61,7 +64,8 @@ def split(val, separator=",", min_len=0, fill_last=False):
 
 def get_nulls(val):
     """
-    Makes every "NULL" None.
+    Converts every "NULL" string to python's None.
+
     :param val: string or whatever
     :return: val or None if val is "NULL"
     """
@@ -69,6 +73,10 @@ def get_nulls(val):
 
 
 key_fix = {
+    """
+    forward key modifications
+    """
+
     'PandaID': 'job_id',  # it is job id, not PanDA
     'transformation': 'command',  # making it more convenient
     'jobPars': 'command_parameters',  # -.-
@@ -85,22 +93,46 @@ key_fix = {
     'attemptNr': 'attempt_number',  # bad practice to strip words API needs to be readable
 }
 
-arrays = []
-
-skip_keys = [  # these are fixed elsewhere
-               'inFiles', "ddmEndPointIn", "destinationSE", "dispatchDBlockToken", "realDatasetsIn", "prodDBlocks",
-               "fsize",
-               "checksum", "outFiles", "ddmEndPointOut", "fileDestinationSE", "dispatchDBlockTokenForOut",
-               "destinationDBlockToken", "realDatasets", "destinationDblock", "logGUID", "scopeIn", "scopeOut",
-               "scopeLog",
-               "GUID", 'prodDBlockToken', 'prodDBlockTokenForOut', "dispatchDblock"
+arrays = [
+    """
+    keys to be threatened as arrays
+    """
 ]
 
-skip_new_keys = [  # these are fixed elsewhere
-                   'input_files', "output_files"
+key_explicit_strings = [
+    """
+    Keys, explicitly threatened as strings, even if they are all-digit or NULL
+    """
+
+]
+
+skip_keys = [
+    """
+    Keys, excluded from key conversion. May be converted elsewhere.
+    """
+
+    'inFiles', "ddmEndPointIn", "destinationSE", "dispatchDBlockToken", "realDatasetsIn", "prodDBlocks",
+    "fsize",
+    "checksum", "outFiles", "ddmEndPointOut", "fileDestinationSE", "dispatchDBlockTokenForOut",
+    "destinationDBlockToken", "realDatasets", "destinationDblock", "logGUID", "scopeIn", "scopeOut",
+    "scopeLog",
+    "GUID", 'prodDBlockToken', 'prodDBlockTokenForOut', "dispatchDblock"
+]
+
+skip_new_keys = [
+    """
+    Keys, excluded from backward key conversion. May be converted elsewhere.
+    """
+
+    'input_files', "output_files"
 ]
 
 key_unfix = {
+    """
+    Backward key modifications.
+    Notice every all-caps abbreviations, they have to be here.
+    """
+
     'job_id': 'PandaID',
     'user_dn': 'prodUserID',
     'task_id': 'taskID',  # all ID's are to be placed here, because snake case lacks of all-caps abbrev info
@@ -119,13 +151,11 @@ key_unfix = {
     'maximum_cpu_usage_time': 'maxCpuCount'
 }
 
-key_explicit_strings = [
-]
-
 
 def is_float(val):
     """
-    Test floatliness of the value.
+    Test floatliness of the string value.
+
     :param val: string or whatever
     :return: True if the value may be converted to Float
     """
@@ -139,6 +169,7 @@ def is_float(val):
 def is_long(s):
     """
     Test value to be convertable to integer.
+
     :param s: string or whatever
     :return: True if the value may be converted to Long
     """
@@ -157,7 +188,7 @@ def is_long(s):
 def parse_value(value):
     """
     Tries to parse value as number or None. If some of this can be done, parsed value is returned. Otherwise returns
-    value without parsing.
+    value unparsed.
 
     :param value:
     :return: mixed
@@ -174,6 +205,7 @@ def parse_value(value):
 def get_input_files(description):
     """
     Extracts input files from the description.
+
     :param description:
     :return: file list
     """
@@ -215,6 +247,7 @@ def get_input_files(description):
 def fix_log(description, files):
     """
     Fixes log file description in output files (changes GUID and scope).
+
     :param description:
     :param files: output files
     :return: fixed output files
@@ -232,6 +265,7 @@ def fix_log(description, files):
 def get_output_files(description):
     """
     Extracts output files from the description.
+
     :param description:
     :return: output files
     """
@@ -266,19 +300,36 @@ def get_output_files(description):
 
 
 def set_logger(logger):
+    """
+    Sets internal logger object, if present.
+
+    :param logger:
+    """
     global log
     if isinstance(logger, logging.Logger):
-        log = logger
+        log = logger.getChild('job_description_fixer')
     else:
-        log = logging.getLogger()
+        log = logging.getLogger('job_description_fixer')
 
 
 def debug(msg):
+    """
+    Output debug message to log, but only when DEBUG flag raised specifically.
+
+    :param msg:
+    :return:
+    """
     if DEBUG:
         log.debug(msg)
 
 
 def stringify_weird(arg):
+    """
+    Converts None to "NULL"
+
+    :param arg:
+    :return: arg or "NULL"
+    """
     if arg is None:
         return "NULL"
     if isinstance(arg, numbers.Number):
@@ -287,10 +338,23 @@ def stringify_weird(arg):
 
 
 def join(arr):
+    """
+    Joins arrays, converting contents to strings.
+
+    :param arr:
+    :return: joined array
+    """
     return ",".join(str(stringify_weird(x)) for x in arr)
 
 
 def join_input_files(unfixed, input_files):
+    """
+    Diversifies the structure holding input files into old-style number of comma-separated arrays.
+
+    :param unfixed:         oldified description structure.
+    :param input_files:     input files structure
+    :return:                oldified description structure with input files related fields.
+    """
     in_files = []
     ddm_endpoint = []
     destination_se = []
@@ -335,6 +399,13 @@ def join_input_files(unfixed, input_files):
 
 
 def unfix_log_parameters(unfixed, log_file):
+    """
+    Sets up log-related fields.
+
+    :param unfixed:     oldified description structure.
+    :param log_file:    log file structure
+    :return:            oldified description structure with log fields.
+    """
     log.info("Extracting log-specific variables")
     unfixed["logGUID"] = log_file["guid"]
     unfixed["scopeLog"] = log_file["scope"]
@@ -342,6 +413,14 @@ def unfix_log_parameters(unfixed, log_file):
 
 
 def join_output_files(unfixed, output_files, log_file):
+    """
+    Diversifies the structure holding output and log files into old-style number of comma-separated arrays.
+
+    :param unfixed:         oldified description structure.
+    :param output_files:    output files structure
+    :param log_file:        log file name.
+    :return:                oldified description structure with output and log files related fields.
+    """
     out_files = []
     ddm_endpoint = []
     destination_se = []
@@ -379,8 +458,11 @@ def join_output_files(unfixed, output_files, log_file):
 
 def description_fixer(description, logger=None):
     """
+    Main function.
+
     Parses the description and changes it into more readable and usable way. For example, extracts all the files and
     makes a structure of them.
+
     :param description:
     :param logging.Logger(logger): logger to use. Default logger otherwise.
     :return: fixed description
@@ -437,7 +519,9 @@ def console_info(msg):
 
 def description_oldifier(description, logger=None):
     """
+    Main back-way parser.
     Parses the description and changes it into old one.
+
     :param description:
     :param logging.Logger(logger): logger to use. Default logger otherwise.
     :return: old description
@@ -492,6 +576,10 @@ def description_oldifier(description, logger=None):
 
 
 if __name__ == "__main__":
+    """
+    Main entrance for command-line startup.
+    See "--help" when calling this file for information.
+    """
     import argparse
     import sys
     import os
