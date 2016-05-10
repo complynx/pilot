@@ -9,6 +9,17 @@ import logging
 
 
 class LoggingContext(object):
+    """
+    Class to override logging level for specified handler.
+    Used for output header and footer of log file regardless the level.
+    Automatically resets level on exit.
+
+    Usage:
+
+        with LoggingContext(handler, new_level):
+            log.something
+
+    """
     def __init__(self, handler, level=None):
         self.level = level
         self.handler = handler
@@ -328,6 +339,14 @@ class Job(object):
             self.send_state()
 
     def prepare_log(self, include_files=None):
+        """
+        Prepares log file for stage out.
+         May be called several times. The prime log file is not removed, so it will append new information (may be
+         useful on log stage out failures to append the info).
+         Automatically detects tarball and zipping based on previously extracted log archive extension.
+
+        :param include_files: array of files to be included if tarball is used to aggregate log.
+        """
         with LoggingContext(self.log_handler, logging.NOTSET):
             import shutil
             full_log_name = self.log_file + self.log_archive
