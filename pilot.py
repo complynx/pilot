@@ -108,7 +108,7 @@ class Pilot:
         if "_CONDOR_SLOT" in os.environ:
             self.node_name = os.environ.get("_CONDOR_SLOT", '')+"@"+self.node_name
 
-        self.pilot_id = self.node_name+(":%d" % os.getpid())
+        self.pilot_id = self.node_name + (":%d" % os.getpid())
 
     def init_after_arguments(self):
         """
@@ -136,9 +136,11 @@ class Pilot:
             log.info("Pilot is running.")
             log.info("Started with: %s" % " ".join(pipes.quote(x) for x in self.argv))
         log.info("User-Agent: " + self.user_agent)
+        log.info("Node name: " + self.node_name)
+        log.info("Pilot ID: " + self.pilot_id)
 
         log.info("Pilot is started from %s" % self.dir)
-        log.info("Working directory is %s" % os.getcwd())
+        log.info("Current working directory is %s" % os.getcwd())
 
         log.info("Printing requirements versions...")
         requirements = pip.req.parse_requirements(os.path.join(self.dir,

@@ -581,7 +581,8 @@ if __name__ == "__main__":
 
     CONSOLE = True
 
-    arg_parser = argparse.ArgumentParser(description="This simple script fixes job description.")
+    arg_parser = argparse.ArgumentParser(description="This simple script converts job description to and from new"
+                                                     " form.")
     arg_parser.add_argument('-i', "--input", type=argparse.FileType('r'), default=sys.stdin,
                             help='Get job description from <file>. If not set, stdin is used.',
                             metavar=os.path.join('your', 'input.json'))

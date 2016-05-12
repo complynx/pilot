@@ -284,7 +284,7 @@ class Job(object):
 
         with LoggingContext(h, logging.NOTSET):
             self.log.info("Using job log file " + self.log_file)
-            self.log.info("Pilot user-agent: " + self.pilot.user_agent)
+            self.pilot.print_initial_information()
             self.log.info("Using effective log level " + logging.getLevelName(lvl))
 
     def parse_description(self):
