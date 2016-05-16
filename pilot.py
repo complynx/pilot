@@ -4,6 +4,7 @@ import sys
 import os
 import logging
 import logging.config
+import logging.handlers
 import argparse
 import pycurl
 from StringIO import StringIO
@@ -23,9 +24,15 @@ logging.basicConfig()
 log = logging.getLogger()
 
 
-class NullHandler(logging.Handler):
-    def emit(self, record):
-        pass
+try:
+    h = logging.NullHandler()
+except:
+    class NullHandler(logging.Handler):
+        def emit(self, record):
+            pass
+
+    logging.NullHandler = NullHandler
+    pass
 
 
 class Pilot:
