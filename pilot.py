@@ -23,6 +23,11 @@ logging.basicConfig()
 log = logging.getLogger()
 
 
+class NullHandler(logging.Handler):
+    def emit(self, record):
+        pass
+
+
 class Pilot:
     """
     Main class.
