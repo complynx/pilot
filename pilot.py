@@ -26,7 +26,11 @@ log = logging.getLogger()
 
 try:
     h = logging.NullHandler()
-except:
+    h = None
+except AttributeError:
+
+    # 2.6 workaround
+
     class NullHandler(logging.Handler):
         def emit(self, record):
             pass
