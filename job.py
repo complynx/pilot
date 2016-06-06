@@ -395,17 +395,24 @@ class Job(object):
 
         self.log.info("Log file prepared for stageout.")
 
-    def run(self):
-        """
-        Main code of job manager.
+    # def rucio_info(self):
+    #     child = subprocess.Popen(['rucio', 'whoami'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    #     child_out = ''
+    #     child_err = ''
+    #     while child.returncode is None:
+    #         out, err = child.communicate()
+    #         child_out += out  # let's assume the output is not very long for now.
+    #         child_err += err
+    #     self.log.info("Rucio whoami responce: \n" + child_out)
+    #     if child_err != '':
+    #         self.log.warn("Rucio returned error(s): \n" + child_err)
 
-        Stages in, executes and stages out the job.
-        """
-        self.state = 'starting'
+    def stage_in(self):
         self.state = 'stagein'
+        # self.rucio_info()
 
+    def payload_run(self):
         self.state = 'running'
-
         args = shlex.split(self.command_parameters, True, True)
         args.insert(0, self.command)
 
@@ -425,5 +432,17 @@ class Job(object):
         self.error_code = child.returncode
 
         self.state = "holding"
+
+    def run(self):
+        """
+        Main code of job manager.
+
+        Stages in, executes and stages out the job.
+        """
+        self.state = 'starting'
+
+        self.stage_in()
+        self.payload_run()
+
         self.prepare_log()
         self.state = 'finished'
