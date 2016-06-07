@@ -159,9 +159,13 @@ class Pilot:
         log.info("Current working directory is %s" % os.getcwd())
 
         log.info("Printing requirements versions...")
-        requirements = pip.req.parse_requirements(os.path.join(self.dir,
-                                                               "requirements.txt"),
-                                                  session=False)
+        try:
+            requirements = pip.req.parse_requirements(os.path.join(self.dir,
+                                                                   "requirements.txt"),
+                                                      session=False)
+        except TypeError:
+            requirements = pip.req.parse_requirements(os.path.join(self.dir,
+                                                                   "requirements.txt"))
         for req in requirements:
             log.info("%s (%s)" % (req.name, req.installed_version))
 
