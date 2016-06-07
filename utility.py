@@ -2,42 +2,67 @@ import threading
 import subprocess
 import logging
 import time
+import os
+import signal
+import psutil
+import pipes
 
 log = logging.getLogger("Utility")
 
 
 class CollectStream(threading.Thread):
-    def __init__(self, stream):
+    def __init__(self, stream, child):
+        threading.Thread.__init__(self)
         self.stream = stream
+        self.child = child
         self.buffer = ''
 
     def run(self):
         while True:
-            out = self.stream.readline()
-            if out:
+            out = self.stream.read(1)
+            if out == '' and self.child.poll() is not None:
+                break
+            if out != '':
                 self.buffer += out
-            else:
+                # print(out)
+
+        self.stream.close()
+
+
+terminator = signal.SIGTERM if os.name != 'nt' else signal.CTRL_BREAK_EVENT
+
+
+class Popen(psutil.Popen):
+
+    def __init__(self, args, timeout=None, terminate_timeout=5):
+        psutil.Popen.__init__(self, args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+        o = CollectStream(self.stdout, self)
+        e = CollectStream(self.stderr, self)
+
+        o.start()
+        e.start()
+
+        if timeout:
+            end = time.time() + timeout
+        while self.is_running():
+            if timeout and end < time.time():
+                log.info("child timed out, terminating")
+                self.terminate_graceful()
+                end = time.time() + terminate_timeout
                 break
 
-class GetOutput(threading.Thread):
-    def __init__(self, child):
-        threading.Thread.__init__(self)
-        self.child = child
-        self.out = ''
-        self.err = ''
+        while self.is_running():
+            if terminate_timeout and end < time.time():
+                log.info("child termination timed out, killing")
+                self.kill()
+                break
 
-    def run(self):
-        child = self.child
-        o_iterator = iter(child.stdout.readline, b"")
-        e_iterator = iter(child.stderr.readline, b"")
+    def terminate_graceful(self):
+        self.send_signal(terminator)
 
-        while child.poll() is None:
-            for line in o_iterator:
-                print(line)
-                self.out += line
-            for line in e_iterator:
-                print(line)
-                self.err += line
+
+
 
 
 class Utility(object):
@@ -46,31 +71,41 @@ class Utility(object):
         pass
 
     def call(self, arguments, timeout=None, terminate_timeout=5):
-        child = subprocess.Popen(arguments, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=1)
+        log.info("calling " + " ".join(pipes.quote(x) for x in arguments))
+        child = psutil.Popen(arguments, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-        o = GetOutput(child)
+        o = CollectStream(child.stdout, child)
+        e = CollectStream(child.stderr, child)
 
         o.start()
+        e.start()
 
-        o.join(timeout)
-        if o.is_alive:
-            log.info("child timed out, terminating")
-            child.terminate()
-            o.join(terminate_timeout)
-            if o.is_alive:
+        if timeout:
+            end = time.time() + timeout
+        while child.is_running():
+            if timeout and end < time.time():
+                log.info("child timed out, terminating")
+                self.terminate_child(child)
+                end = time.time() + terminate_timeout
+                break
+
+        while child.is_running():
+            if terminate_timeout and end < time.time():
                 log.info("child termination timed out, killing")
-                child.kill()
-                o.join(terminate_timeout)
+                self.kill_child(child)
+                break
 
-        return child.returncode, o.out, o.err
+        rc = child.wait()
+
+        return rc, o.buffer, e.buffer
 
 
 if __name__ == "__main__":
-    u=Utility()
+    u = Utility()
     logging.basicConfig()
     log.setLevel(logging.DEBUG)
-    c,o,e = u.call(["bash","trap.sh"],timeout=1,terminate_timeout=1)
-    print("%d\n____________________\n"%c)
+    c, o, e = u.call(["bash", "trap.sh"], timeout=1, terminate_timeout=1)
+    print("%d\n____________________\n" % c)
     print(o)
     print("\n____________________\n")
     print(e)

@@ -6,6 +6,7 @@ import shlex
 import pipes
 import re
 import logging
+from utility import Utility
 
 
 class LoggingContext(object):
@@ -34,7 +35,7 @@ class LoggingContext(object):
             self.handler.setLevel(self.old_level)
 
 
-class Job(object):
+class Job(Utility):
     """
     This class holds a job and helps with it.
     Class presents also an interface to job description. Each field in it is mirrored to this class if there is no other
@@ -83,6 +84,7 @@ class Job(object):
     __acceptable_log_wrappers = ["tar", "tgz", "gz", "gzip", "tbz2", "bz2", "bzip2"]
 
     def __init__(self, _pilot, _desc):
+        Utility.__init__(self)
         self.log = logging.getLogger('pilot.jobmanager')
         self.pilot = _pilot
         if _pilot.args.no_job_update:
@@ -395,21 +397,17 @@ class Job(object):
 
         self.log.info("Log file prepared for stageout.")
 
-    # def rucio_info(self):
-    #     child = subprocess.Popen(['rucio', 'whoami'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    #     child_out = ''
-    #     child_err = ''
-    #     while child.returncode is None:
-    #         out, err = child.communicate()
-    #         child_out += out  # let's assume the output is not very long for now.
-    #         child_err += err
-    #     self.log.info("Rucio whoami responce: \n" + child_out)
-    #     if child_err != '':
-    #         self.log.warn("Rucio returned error(s): \n" + child_err)
+    def rucio_info(self):
+        c,o,e = self.call(['rucio', 'whoami'])
+        self.log.info("Rucio whoami responce: \n" + o)
+        if e != '':
+            self.log.warn("Rucio returned error(s): \n" + e)
 
     def stage_in(self):
         self.state = 'stagein'
-        # self.rucio_info()
+        self.rucio_info()
+        for f in self.input_files:
+            c,o,e = self.call(['rucio', 'download', self.input_files[f]['scope'] + ":" + f])
 
     def payload_run(self):
         self.state = 'running'
@@ -418,18 +416,12 @@ class Job(object):
 
         self.log.info("Starting job cmd: %s" % " ".join(pipes.quote(x) for x in args))
 
-        child = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        child_out = ''
-        child_err = ''
-        while child.returncode is None:
-            out, err = child.communicate()
-            child_out += out  # let's assume the output is not very long for now.
-            child_err += err
+        c,o,e = self.call(args)
 
-        self.log.info("Job ended with status: %d" % child.returncode)
-        self.log.info("Job stdout:\n%s" % child_out)
-        self.log.info("Job stderr:\n%s" % child_err)
-        self.error_code = child.returncode
+        self.log.info("Job ended with status: %d" % c)
+        self.log.info("Job stdout:\n%s" % o)
+        self.log.info("Job stderr:\n%s" % e)
+        self.error_code = c
 
         self.state = "holding"
 
