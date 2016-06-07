@@ -4,6 +4,7 @@ import sys
 import os
 import logging
 import logging.config
+import logging.handlers
 import argparse
 import pycurl
 from StringIO import StringIO
@@ -21,6 +22,21 @@ from job_description_fixer import description_fixer
 
 logging.basicConfig()
 log = logging.getLogger()
+
+
+try:
+    h = logging.NullHandler()
+    h = None
+except AttributeError:
+
+    # 2.6 workaround
+
+    class NullHandler(logging.Handler):
+        def emit(self, record):
+            pass
+
+    logging.NullHandler = NullHandler
+    pass
 
 
 class Pilot:
