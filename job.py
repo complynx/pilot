@@ -407,7 +407,7 @@ class Job(Utility):
         self.state = 'stagein'
         self.rucio_info()
         for f in self.input_files:
-            c,o,e = self.call(['rucio', 'download', self.input_files[f]['scope'] + ":" + f])
+            c,o,e = self.call(['rucio', 'download', '--no-subdir', self.input_files[f]['scope'] + ":" + f])
 
     def payload_run(self):
         self.state = 'running'

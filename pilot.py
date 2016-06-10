@@ -282,8 +282,8 @@ class Pilot:
         """
         log.info("Trying to get queuedata.")
         self.queuedata = self.try_get_json_file(self.args.queuedata)
-        if self.queuedata is None:
-            self.queuedata = self.try_get_json_file("/cvmfs/atlas.cern.ch/repo/sw/local/etc/agis_ddmendpoints.json")
+        # if self.queuedata is None:
+        #     self.queuedata = self.try_get_json_file("/cvmfs/atlas.cern.ch/repo/sw/local/etc/agis_ddmendpoints.json")
         if self.queuedata is None:
             log.info("Queuedata is not saved locally. Asking server.")
 
