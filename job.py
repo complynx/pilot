@@ -418,7 +418,7 @@ class Job(Utility):
 
         c,o,e = self.call(args)
 
-        self.log.info("Job ended with status: %d" % c)
+        self.log.info("Job ended with status: %s" % c)
         self.log.info("Job stdout:\n%s" % o)
         self.log.info("Job stderr:\n%s" % e)
         self.error_code = c
