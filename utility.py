@@ -10,6 +10,11 @@ import pipes
 log = logging.getLogger("Utility")
 
 
+def touch(fname, times=None):
+    with open(fname, 'a'):
+        os.utime(fname, times)
+
+
 class CollectStream(threading.Thread):
     def __init__(self, stream, child):
         threading.Thread.__init__(self)

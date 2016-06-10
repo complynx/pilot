@@ -114,6 +114,8 @@ class Pilot:
                                     metavar="tag")
         self.argParser.add_argument("--no_job_update", action='store_true',
                                     help="Disable job server updates")
+        self.argParser.add_argument("--simulate_rucio", action='store_true',
+                                    help="Disable rucio, just simulate")
 
         self.logger = logging.getLogger("pilot")
         self.user_agent += " (Python %s; %s %s; rv:alpha) minipilot/daniel" % \

@@ -6,7 +6,7 @@ import shlex
 import pipes
 import re
 import logging
-from utility import Utility
+from utility import Utility, touch
 
 
 class LoggingContext(object):
@@ -398,7 +398,10 @@ class Job(Utility):
         self.log.info("Log file prepared for stageout.")
 
     def rucio_info(self):
-        c,o,e = self.call(['rucio', 'whoami'])
+        if self.pilot.args.simulate_rucio:
+            c, o, e = (0, "simulated", "")
+        else:
+            c, o, e = self.call(['rucio', 'whoami'])
         self.log.info("Rucio whoami responce: \n" + o)
         if e != '':
             self.log.warn("Rucio returned error(s): \n" + e)
@@ -407,7 +410,36 @@ class Job(Utility):
         self.state = 'stagein'
         self.rucio_info()
         for f in self.input_files:
-            c,o,e = self.call(['rucio', 'download', '--no-subdir', self.input_files[f]['scope'] + ":" + f])
+            if self.pilot.args.simulate_rucio:
+                touch(f)
+                self.log.info("Simulated downloading " + f + " from " + self.input_files[f]['scope'])
+            else:
+                c, o, e = self.call(['rucio', 'download', '--no-subdir', self.input_files[f]['scope'] + ":" + f])
+
+    def stage_out(self):
+        self.state = 'stageout'
+        self.rucio_info()
+        for f in self.output_files:
+            if os.path.isfile(f) and self.description['log_file'] != f:
+                if self.pilot.args.simulate_rucio:
+                    self.log.info("Simulated uploading " + f + " to scope " + self.output_files[f]['scope'] +
+                                  " and SE " + self.output_files[f]['storage_element'])
+                else:
+                    c, o, e = self.call(['rucio', 'upload', '--rse', self.output_files[f]['storage_element'], '--scope',
+                                         self.output_files[f]['scope'], f])
+            else:
+                self.log.warn("Can not upload " + f + ", file does not exist.")
+        self.prepare_log()
+        with self.description['log_file'] as f:
+            if os.path.isfile(f):
+                if self.pilot.args.simulate_rucio:
+                    self.log.info("Simulated uploading " + f + " to scope " + self.output_files[f]['scope'] +
+                                  " and SE " + self.output_files[f]['storage_element'])
+                else:
+                    c, o, e = self.call(['rucio', 'upload', '--rse', self.output_files[f]['storage_element'], '--scope',
+                                         self.output_files[f]['scope'], f])
+            else:
+                self.log.warn("Can not upload " + f + ", file does not exist.")
 
     def payload_run(self):
         self.state = 'running'
@@ -416,7 +448,7 @@ class Job(Utility):
 
         self.log.info("Starting job cmd: %s" % " ".join(pipes.quote(x) for x in args))
 
-        c,o,e = self.call(args)
+        c, o, e = self.call(args)
 
         self.log.info("Job ended with status: %s" % c)
         self.log.info("Job stdout:\n%s" % o)
@@ -435,6 +467,6 @@ class Job(Utility):
 
         self.stage_in()
         self.payload_run()
+        self.stage_out()
 
-        self.prepare_log()
         self.state = 'finished'
