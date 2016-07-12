@@ -8,6 +8,11 @@ import re
 import logging
 from utility import Utility, touch
 
+# TODO: Switch from external Rucio calls to internal ones. (Should consult with Mario)
+# Before: fix platform dependencies in Rucio
+
+# TODO: Rework queuedata overriding. Current version is a complete garbage.
+
 
 class LoggingContext(object):
     """
@@ -84,6 +89,12 @@ class Job(Utility):
     __acceptable_log_wrappers = ["tar", "tgz", "gz", "gzip", "tbz2", "bz2", "bzip2"]
 
     def __init__(self, _pilot, _desc):
+        """
+        Initializer. Parses description.
+        :param _pilot: Pilot class instance.
+        :param _desc: Description object.
+        :return:
+        """
         Utility.__init__(self)
         self.log = logging.getLogger('pilot.jobmanager')
         self.pilot = _pilot
@@ -95,7 +106,9 @@ class Job(Utility):
 
     def __getattr__(self, item):
         """
-        Propagation of description values to Job instance if they are not shadowed.
+        Reflection of description values into Job instance properties if they are not shadowed.
+        If there is no own property with corresponding name, the value of Description is used.
+        Params and return described in __getattr__ interface.
         """
         try:
             return object.__getattribute__(self, item)
@@ -109,7 +122,9 @@ class Job(Utility):
 
     def __setattr__(self, key, value):
         """
-        Propagation of description values to Job instance if they are not shadowed.
+        Reflection of description values into Job instance properties if they are not shadowed.
+        If there is no own property with corresponding name, the value of Description is set.
+        Params and return described in __setattr__ interface.
         """
         try:
             old = object.__getattribute__(self, key)
@@ -398,6 +413,9 @@ class Job(Utility):
         self.log.info("Log file prepared for stageout.")
 
     def rucio_info(self):
+        """
+        Logs basic Rucio information (basically whoami response)
+        """
         if self.pilot.args.simulate_rucio:
             c, o, e = (0, "simulated", "")
         else:
@@ -407,6 +425,9 @@ class Job(Utility):
             self.log.warn("Rucio returned error(s): \n" + e)
 
     def stage_in(self):
+        """
+        Stages in files using Rucio.
+        """
         self.state = 'stagein'
         self.rucio_info()
         for f in self.input_files:
@@ -417,6 +438,9 @@ class Job(Utility):
                 c, o, e = self.call(['rucio', 'download', '--no-subdir', self.input_files[f]['scope'] + ":" + f])
 
     def stage_out(self):
+        """
+        Stages out files using Rucio.
+        """
         self.state = 'stageout'
         self.rucio_info()
         for f in self.output_files:
@@ -442,6 +466,9 @@ class Job(Utility):
                 self.log.warn("Can not upload " + f + ", file does not exist.")
 
     def payload_run(self):
+        """
+        Runs payload.
+        """
         self.state = 'running'
         args = shlex.split(self.command_parameters, True, True)
         args.insert(0, self.command)

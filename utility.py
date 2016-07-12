@@ -9,8 +9,17 @@ import pipes
 
 log = logging.getLogger("Utility")
 
+# TODO: Create proper stream collectors
+
 
 def touch(fname, times=None):
+    """
+    Polyfill for touch(1).
+
+    :param fname: file to touch
+    :param times: time to set
+    :return:
+    """
     with open(fname, 'a'):
         os.utime(fname, times)
 
