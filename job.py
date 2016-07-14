@@ -6,6 +6,7 @@ import shlex
 import pipes
 import re
 import logging
+import copy
 from utility import Utility, touch
 
 # TODO: Switch from external Rucio calls to internal ones. (Should consult with Mario)
@@ -373,7 +374,7 @@ class Job(Utility):
         Initializes description induced configurations: log handlers, queuedata modifications, etc.
         """
         self.init_logging()
-        self.modify_queuedata()
+        self.prepare_command_params()
 
     @property
     def state(self):
@@ -534,7 +535,7 @@ class Job(Utility):
         Runs payload.
         """
         self.state = 'running'
-        args = shlex.split(self.command_parameters, True, True)
+        args = copy.deepcopy(self.command_parameters)
         args.insert(0, self.command)
 
         self.log.info("Starting job cmd: %s" % " ".join(pipes.quote(x) for x in args))
