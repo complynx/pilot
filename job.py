@@ -296,6 +296,7 @@ class Job(Utility):
 
             if not overwriting:
                 if param == '--overwriteQueuedata':
+                    self.log.debug("overwriteQueuedata found")
                     overwriting = True
                 else:
                     new_params.append(param)
