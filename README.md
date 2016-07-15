@@ -66,3 +66,24 @@ To get the parameter list with the explanations, use:
 $ pilot.py --help
 ```
 
+With that you can:
+
+1. Skip server updates
+2. Simulate Rucio
+3. Setup other paths for certs or else
+4. Use another servers & ports
+5. Use preloaded descriptions and configs
+6. Kill JFK
+7. Rule the world (groot permissions might be needed)
+
+
+More usage
+----------
+
+See into the depths of the code, there are also some docs.
+
+
+Even moar usage
+---------------
+
+Ask me.
