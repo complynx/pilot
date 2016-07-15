@@ -165,11 +165,12 @@ class Pilot:
             requirements = pip.req.parse_requirements(os.path.join(self.dir,
                                                                    "requirements.txt"),
                                                       session=False)
+            for req in requirements:
+                log.info("%s (%s)" % (req.name, req.installed_version))
         except TypeError:
-            requirements = pip.req.parse_requirements(os.path.join(self.dir,
-                                                                   "requirements.txt"))
-        for req in requirements:
-            log.info("%s (%s)" % (req.name, req.installed_version))
+            log.warn("Outdated version of PIP? Have you set up your environment properly? Skipping module info test...")
+            log.warn("Pilot may crash at any time, be aware. And I can't provide you with module information, probably"
+                     " the crash is caused by some outdated module.")
 
     def run(self, argv):
         """
@@ -181,6 +182,9 @@ class Pilot:
         self.argv = argv
         self.args = self.argParser.parse_args(argv[1:])
         self.init_after_arguments()
+
+        log.info("This pilot version is developed only for testing purposes, do not use it in production."
+                 " You were warned.")
 
         self.print_initial_information()
 
@@ -350,7 +354,7 @@ class Pilot:
 # main
 if __name__ == "__main__":
     """
-    Main workflow is to create Pilot instance and run it with command arguments.
+    Main workflow is to create Pilot instance and run it with the command arguments.
     """
     pilot = Pilot()
     pilot.run(sys.argv)
