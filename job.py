@@ -1,10 +1,8 @@
 import urllib
 import os
-import subprocess
 import json
 import shlex
 import pipes
-import re
 import logging
 import copy
 from utility import Utility, touch
@@ -128,7 +126,7 @@ class Job(Utility):
         Params and return described in __setattr__ interface.
         """
         try:
-            old = object.__getattribute__(self, key)
+            object.__getattribute__(self, key)
             object.__setattr__(self, key, value)
         except AttributeError:
             if self.description is not None:
@@ -138,6 +136,18 @@ class Job(Utility):
                     self.description[key] = value
                 return
             object.__setattr__(self, key, value)
+
+    def get_key_value_for_queuedata(self, parameter):
+        m = parameter.split('=', 1)
+        key = m[0]
+        value = None
+        if len(m) > 1:
+            try:
+                value = json.loads(m[1])
+            except ValueError:
+                value = m[1]
+
+        return key, value
 
     def prepare_command_params(self):
         """
@@ -182,15 +192,7 @@ class Job(Utility):
                     if param == '--':
                         continue  # variant to end the parameter list
                 else:
-                    m = param.split('=', 1)
-                    key = m[0]
-                    value = None
-                    if len(m) > 1:
-                        try:
-                            value = json.loads(m[1])
-                        except ValueError:
-                            value = m[1]
-
+                    key, value = self.get_key_value_for_queuedata(param)
                     self.log.debug("Overwriting queuedata parameter \"%s\" to %s" % (key, json.dumps(value)))
                     self.pilot.queuedata[key] = value
 
@@ -328,7 +330,7 @@ class Job(Utility):
             elif self.log_archive.find("2") >= 0:
                 self.log.info("Detected compression bzip2.")
                 mode += ":bz2"
-                from bz2 import BZ2File as compressor
+                from bz2 import BZ2File as compressor  # NOQA: N813
 
             if self.log_archive.find("t") >= 0:
                 self.log.info("Detected log archive: tar.")

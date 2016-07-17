@@ -38,6 +38,7 @@ except AttributeError:
     logging.NullHandler = NullHandler
     pass
 
+
 class Pilot:
     """
     Main class.

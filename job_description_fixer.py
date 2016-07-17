@@ -206,18 +206,18 @@ def get_input_files(description):
     files = {}
     if description['inFiles'] and description['inFiles'] != "NULL":
         in_files = split(description["inFiles"])
-        L = len(in_files)
-        ddm_endpoint = split(description.get("ddmEndPointIn"), min_len=L)
-        destination_se = split(description.get("destinationSE"), min_len=L)
-        dispatch_dblock = split(description.get("dispatchDblock"), min_len=L)
-        dispatch_dblock_token = split(description.get("dispatchDBlockToken"), min_len=L)
-        datasets = split(description.get("realDatasetsIn"), min_len=L, fill_last=True)
-        dblocks = split(description.get("prodDBlocks"), min_len=L)
-        dblock_tokens = split(description.get("prodDBlockToken"), min_len=L)
-        size = split(description.get("fsize"), min_len=L)
-        c_sum = split(description.get("checksum"), min_len=L)
-        scope = split(description.get("scopeIn"), min_len=L, fill_last=True)
-        guids = split(description.get("GUID"), min_len=L, fill_last=True)
+        l = len(in_files)
+        ddm_endpoint = split(description.get("ddmEndPointIn"), min_len=l)
+        destination_se = split(description.get("destinationSE"), min_len=l)
+        dispatch_dblock = split(description.get("dispatchDblock"), min_len=l)
+        dispatch_dblock_token = split(description.get("dispatchDBlockToken"), min_len=l)
+        datasets = split(description.get("realDatasetsIn"), min_len=l, fill_last=True)
+        dblocks = split(description.get("prodDBlocks"), min_len=l)
+        dblock_tokens = split(description.get("prodDBlockToken"), min_len=l)
+        size = split(description.get("fsize"), min_len=l)
+        c_sum = split(description.get("checksum"), min_len=l)
+        scope = split(description.get("scopeIn"), min_len=l, fill_last=True)
+        guids = split(description.get("GUID"), min_len=l, fill_last=True)
 
         for i, f in enumerate(in_files):
             if f is not None:
@@ -266,15 +266,15 @@ def get_output_files(description):
     files = {}
     if description['outFiles'] and description['outFiles'] != "NULL":
         out_files = split(description["outFiles"])
-        L = len(out_files)
-        ddm_endpoint = split(description.get("ddmEndPointOut"), min_len=L)
-        destination_se = split(description.get("fileDestinationSE"), min_len=L)
-        dblock_token = split(description.get("dispatchDBlockTokenForOut"), min_len=L)
-        dblock_tokens = split(description.get("prodDBlockTokenForOut"), min_len=L)
-        datasets = split(description.get("realDatasets"), min_len=L)
-        dblocks = split(description.get("destinationDblock"), min_len=L)
-        destination_dblock_token = split(description.get("destinationDBlockToken"), min_len=L)
-        scope = split(description.get("scopeOut"), min_len=L, fill_last=True)
+        l = len(out_files)
+        ddm_endpoint = split(description.get("ddmEndPointOut"), min_len=l)
+        destination_se = split(description.get("fileDestinationSE"), min_len=l)
+        dblock_token = split(description.get("dispatchDBlockTokenForOut"), min_len=l)
+        dblock_tokens = split(description.get("prodDBlockTokenForOut"), min_len=l)
+        datasets = split(description.get("realDatasets"), min_len=l)
+        dblocks = split(description.get("destinationDblock"), min_len=l)
+        destination_dblock_token = split(description.get("destinationDBlockToken"), min_len=l)
+        scope = split(description.get("scopeOut"), min_len=l, fill_last=True)
 
         for i, f in enumerate(out_files):
             if f is not None:
@@ -568,11 +568,38 @@ def description_oldifier(description, logger=None):
     return unfixed
 
 
-if __name__ == "__main__":
+def cli_parse(args):
+    log.info("loading file")
+    try:
+        description = json.load(args.input)
+    except:
+        log.error("Could not parse file. Exiting.")
+        raise
+
+    log.info("parsing description")
+    try:
+        if args.revert:
+            fixed = description_oldifier(description)
+        else:
+            fixed = description_fixer(description)
+    except:
+        log.error("Could not fix description.")
+        raise
+
+    log.info("saving file")
+    try:
+        json.dump(fixed, args.output, indent=4, sort_keys=True)
+    except:
+        log.error("Could not save fixed description.")
+        raise
+
+
+def cli_setup():
     """
     Main entrance for command-line startup.
     See "--help" when calling this file for information.
     """
+    global DEBUG, CONSOLE
     import argparse
     import sys
     import os
@@ -611,26 +638,8 @@ if __name__ == "__main__":
 
     log.info("Log level %d" % log.getEffectiveLevel())
 
-    log.info("loading file")
-    try:
-        description = json.load(args.input)
-    except:
-        log.error("Could not parse file. Exiting.")
-        raise
+    return args
 
-    log.info("parsing description")
-    try:
-        if args.revert:
-            fixed = description_oldifier(description)
-        else:
-            fixed = description_fixer(description)
-    except:
-        log.error("Could not fix description.")
-        raise
-
-    log.info("saving file")
-    try:
-        json.dump(fixed, args.output, indent=4, sort_keys=True)
-    except:
-        log.error("Could not save fixed description.")
-        raise
+if __name__ == "__main__":
+    env = cli_setup()
+    cli_parse(env)

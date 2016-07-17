@@ -76,9 +76,6 @@ class Popen(psutil.Popen):
         self.send_signal(terminator)
 
 
-
-
-
 class Utility(object):
 
     def __init__(self):
